@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800.000" height="600.000" viewBox="0.0 0.0 800.000 600.000" version="1.1">
+  <title>Produce by Acme CAD Converter</title>
+  <desc>Produce by Acme CAD Converter</desc>
+<path d="M2.44 80.33L2.44 519.67"
+fill="none" stroke="RGB(237,31,36)" stroke-width="0"/>
+<path d="M2.26 242.49L115.86 246.45M115.86 246.45L229.47 249.72M229.47 249.72L343.11 252.29M343.11 252.29L456.75 254.16M456.75 254.16L570.41 255.34M570.41 255.34L684.07 255.83M684.07 255.83L797.74 255.62"
+fill="none" stroke="RGB(248,153,30)" stroke-width="2"/>
+<path d="M755.62 367.59L773.81 367.59"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M755.62 263.53L755.62 307.11"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M755.62 307.11L755.62 367.59"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M755.62 263.53L735.91 243.27"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M735.91 243.27L735.91 307.11"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M735.91 307.11L735.91 347.33"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M755.62 367.59L735.91 347.33"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M755.62 263.53L773.81 263.53"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 263.53L773.81 307.11"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 307.11L773.81 367.59"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.16 263.53L753.45 243.27"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M735.91 243.27L753.45 243.27"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M753.45 243.27L753.45 230.15"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 263.53L773.81 250.41"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M753.45 230.15L773.81 250.41"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M759.18 249.15L759.18 235.84"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M765.32 255.46L765.32 241.95"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 250.41L775.94 250.41"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M755.58 230.15L775.94 250.41"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M759.18 235.84L761.3 235.84"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M765.32 241.95L767.44 241.95"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M775.94 250.41L775.94 307.11"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M775.94 307.11L775.94 377.46"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 250.41L773.81 307.11"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 307.11L773.81 377.46"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M763.89 367.59L773.81 377.46"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M773.81 377.46L775.94 377.46"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M743.98 267.2L743.31 267.4M743.31 267.4L742.66 267.98M742.66 267.98L742.05 268.93M742.05 268.93L741.51 270.22M741.51 270.22L741.06 271.8M741.06 271.8L740.7 273.62M740.7 273.62L740.46 275.61M740.46 275.61L740.33 277.71M740.33 277.71L740.33 279.85M740.33 279.85L740.46 281.95M740.46 281.95L740.7 283.95M740.7 283.95L741.06 285.76M741.06 285.76L741.51 287.34M741.51 287.34L742.05 288.63M742.05 288.63L742.66 289.59M742.66 289.59L743.31 290.17M743.31 290.17L743.98 290.37M743.98 290.37L744.65 290.17M744.65 290.17L745.3 289.59M745.3 289.59L745.91 288.63M745.91 288.63L746.44 287.34M746.44 287.34L746.9 285.76M746.9 285.76L747.26 283.95M747.26 283.95L747.5 281.95M747.5 281.95L747.62 279.85M747.62 279.85L747.62 277.71M747.62 277.71L747.5 275.61M747.5 275.61L747.26 273.62M747.26 273.62L746.9 271.8M746.9 271.8L746.44 270.22M746.44 270.22L745.91 268.93M745.91 268.93L745.3 267.98M745.3 267.98L744.65 267.4M744.65 267.4L743.98 267.2"
+fill="none" stroke="black" stroke-width="2"/>
+<path d="M743.82 267.21L745.23 266.14M745.23 266.14L746.41 264.82M746.41 264.82L747.31 263.3M747.31 263.3L747.89 261.63M747.89 261.63L748.14 259.88M748.14 259.88L748.04 258.12M748.04 258.12L747.59 256.4M747.59 256.4L746.83 254.81M746.83 254.81L745.76 253.4"
+fill="none" stroke="black" stroke-width="2"/>
+</svg>
