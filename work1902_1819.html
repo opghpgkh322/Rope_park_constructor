@@ -2266,33 +2266,80 @@
 
 			const stagePixelWidth = 320;
 			const leftPadding = 220;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = fullHeight - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const scale = ((fullHeight - topPadding - bottomPadding) / (maxHeight + 50));
 			const centers = Array.from({ length: state.platformCount }, (_, idx) => leftPadding + idx * stagePixelWidth)
 				.filter((x) => x > 0 && x < fullWidth);
 			const splitPoints = [0, ...centers, fullWidth];
 
 			const containerWidth = rowsContainer.clientWidth || 1000;
 			const rowTargetWidth = Math.max(stagePixelWidth * 4.2, (containerWidth - 24) * 1.65);
-			const EDGE_EPSILON = 0.01;
+			const EDGE_EPSILON = 0.5;
 
-			const appendRow = (sliceStart, sliceEnd) => {
-				const width = Math.max(1, sliceEnd - sliceStart);
+			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
+
+			const appendRow = (sliceStart, sliceEnd, isFirstRow, isLastRow) => {
+				const adjustedStart = isFirstRow ? sliceStart : Math.min(sliceEnd, sliceStart + EDGE_EPSILON);
+				const adjustedEnd = isLastRow ? sliceEnd : Math.max(adjustedStart + 1, sliceEnd - EDGE_EPSILON);
+				const width = Math.max(1, adjustedEnd - adjustedStart);
 				const row = document.createElement('div');
 				row.className = 'summary-track-row';
 
 				const rowSvg = readOnlySvg.cloneNode(true);
-				rowSvg.setAttribute('viewBox', `${sliceStart} 0 ${width} ${fullHeight}`);
+				rowSvg.setAttribute('viewBox', `${adjustedStart} 0 ${width} ${fullHeight}`);
 				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
 				rowSvg.style.pointerEvents = 'none';
+
+				const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+				for (let i = 0; i < state.platformCount; i++) {
+					const x = leftPadding + i * stagePixelWidth;
+					if (x < adjustedStart + 8 || x > adjustedEnd - 8) continue;
+					const platformY = groundY - state.heights[i] * scale - 20;
+
+					const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+					heightText.setAttribute('x', x);
+					heightText.setAttribute('y', platformY - 122);
+					heightText.setAttribute('text-anchor', 'middle');
+					heightText.setAttribute('font-size', '12');
+					heightText.setAttribute('font-weight', '600');
+					heightText.setAttribute('fill', '#2f3d3b');
+					heightText.textContent = `Высота ${formatMeters(state.heights[i])}`;
+					labelsGroup.appendChild(heightText);
+				}
+
+				for (let i = 0; i < state.platformCount - 1; i++) {
+					const x1 = leftPadding + i * stagePixelWidth;
+					const x2 = leftPadding + (i + 1) * stagePixelWidth;
+					const midX = (x1 + x2) / 2;
+					if (midX <= adjustedStart + 6 || midX >= adjustedEnd - 6) continue;
+
+					const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+					distText.setAttribute('x', midX);
+					distText.setAttribute('y', groundY + 42);
+					distText.setAttribute('text-anchor', 'middle');
+					distText.setAttribute('font-size', '12');
+					distText.setAttribute('font-weight', '600');
+					distText.setAttribute('fill', '#555');
+					distText.textContent = `Расстояние ${formatMeters(state.distances[i])}`;
+					labelsGroup.appendChild(distText);
+				}
+
+				rowSvg.appendChild(labelsGroup);
 				row.appendChild(rowSvg);
 				rowsContainer.appendChild(row);
 			};
 
 			if (fullWidth <= rowTargetWidth) {
-				appendRow(0, fullWidth);
+				appendRow(0, fullWidth, true, true);
 				return;
 			}
 
 			let currentStart = 0;
+			let rowIndex = 0;
 			while (currentStart < fullWidth) {
 				const preferredEnd = currentStart + rowTargetWidth;
 
@@ -2304,10 +2351,12 @@
 					nextSplit = splitPoints.find((point) => point > currentStart) || fullWidth;
 				}
 
-				appendRow(currentStart, nextSplit);
+				const isLastRow = nextSplit >= fullWidth;
+				appendRow(currentStart, nextSplit, rowIndex === 0, isLastRow);
 
-				if (nextSplit >= fullWidth) break;
-				currentStart = Math.min(fullWidth, nextSplit + EDGE_EPSILON);
+				if (isLastRow) break;
+				currentStart = nextSplit;
+				rowIndex += 1;
 			}
 		}
 
