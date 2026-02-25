@@ -378,6 +378,35 @@
             width: auto;
         }
 
+        .summary-visualization {
+            background: #ffffff;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 25px;
+            max-height: 740px;
+            overflow-y: auto;
+        }
+
+        .summary-track-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .summary-track-row {
+            border: 1px solid #e6e6e6;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fafafa;
+        }
+
+        .summary-track-row svg {
+            display: block;
+            width: 100%;
+            height: 300px;
+        }
+
         .stages-container-hidden {
             display: none;
         }
@@ -907,6 +936,11 @@
                 </div>
             </header>
             <h2>Расчет стоимости трассы</h2>
+
+            <div class="summary-visualization">
+                <h3 style="margin-bottom: 12px;">Схема трассы</h3>
+                <div id="summaryTrackRows" class="summary-track-rows"></div>
+            </div>
 
             <div class="cost-breakdown" id="costBreakdown"></div>
 
@@ -2202,6 +2236,47 @@
 
 
 
+		function renderSummaryTrack() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			const rowsContainer = document.getElementById('summaryTrackRows');
+			if (!sourceSvg || !rowsContainer) return;
+
+			rowsContainer.innerHTML = '';
+
+			const viewBox = sourceSvg.viewBox?.baseVal;
+			const fullWidth = viewBox?.width || Number(sourceSvg.getAttribute('width')) || 0;
+			const fullHeight = viewBox?.height || Number(sourceSvg.getAttribute('height')) || 640;
+			if (!fullWidth) return;
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const centers = Array.from({ length: state.platformCount }, (_, idx) => leftPadding + idx * stagePixelWidth);
+			const containerWidth = rowsContainer.clientWidth || 1000;
+			const maxStagesInRow = Math.max(3, Math.floor((containerWidth - leftPadding) / stagePixelWidth) + 1);
+
+			let startIndex = 0;
+			while (startIndex < state.platformCount - 1) {
+				let endIndex = Math.min(state.platformCount - 1, startIndex + maxStagesInRow - 1);
+				if (endIndex <= startIndex) endIndex = startIndex + 1;
+
+				const sliceStart = startIndex === 0 ? 0 : centers[startIndex];
+				const sliceEnd = endIndex === state.platformCount - 1 ? fullWidth : centers[endIndex];
+				const sliceWidth = Math.max(sliceEnd - sliceStart, stagePixelWidth * 1.6);
+
+				const row = document.createElement('div');
+				row.className = 'summary-track-row';
+
+				const rowSvg = sourceSvg.cloneNode(true);
+				rowSvg.removeAttribute('id');
+				rowSvg.setAttribute('viewBox', `${sliceStart} 0 ${sliceWidth} ${fullHeight}`);
+				rowSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+				row.appendChild(rowSvg);
+				rowsContainer.appendChild(row);
+
+				startIndex = endIndex;
+			}
+		}
+
 		function drawPlatform(svg, x, y, stagePixelWidth) {
 			const baseWidth = 800;
 			const baseHeight = 600;
@@ -2719,9 +2794,11 @@
 
 		state.breakdown = calculateBreakdown();
 		displayCostSummary(state.breakdown);
+		updateVisualization();
 
 		document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 		document.getElementById('costSummary').classList.add('active');
+		requestAnimationFrame(() => renderSummaryTrack());
 	}
 
 	function calculateBreakdown() {
