@@ -2250,30 +2250,47 @@
 
 			const stagePixelWidth = 320;
 			const leftPadding = 220;
-			const centers = Array.from({ length: state.platformCount }, (_, idx) => leftPadding + idx * stagePixelWidth);
+			const centers = Array.from({ length: state.platformCount }, (_, idx) => leftPadding + idx * stagePixelWidth)
+				.filter((x) => x > 0 && x < fullWidth);
+			const splitPoints = [0, ...centers, fullWidth];
+
 			const containerWidth = rowsContainer.clientWidth || 1000;
-			const maxStagesInRow = Math.max(3, Math.floor((containerWidth - leftPadding) / stagePixelWidth) + 1);
+			const rowTargetWidth = Math.max(stagePixelWidth * 4, (containerWidth - 32) * 1.35);
 
-			let startIndex = 0;
-			while (startIndex < state.platformCount - 1) {
-				let endIndex = Math.min(state.platformCount - 1, startIndex + maxStagesInRow - 1);
-				if (endIndex <= startIndex) endIndex = startIndex + 1;
-
-				const sliceStart = startIndex === 0 ? 0 : centers[startIndex];
-				const sliceEnd = endIndex === state.platformCount - 1 ? fullWidth : centers[endIndex];
-				const sliceWidth = Math.max(sliceEnd - sliceStart, stagePixelWidth * 1.6);
-
+			const appendRow = (sliceStart, sliceEnd) => {
+				const width = Math.max(1, sliceEnd - sliceStart);
 				const row = document.createElement('div');
 				row.className = 'summary-track-row';
 
 				const rowSvg = sourceSvg.cloneNode(true);
 				rowSvg.removeAttribute('id');
-				rowSvg.setAttribute('viewBox', `${sliceStart} 0 ${sliceWidth} ${fullHeight}`);
+				rowSvg.setAttribute('viewBox', `${sliceStart} 0 ${width} ${fullHeight}`);
 				rowSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 				row.appendChild(rowSvg);
 				rowsContainer.appendChild(row);
+			};
 
-				startIndex = endIndex;
+			if (fullWidth <= rowTargetWidth) {
+				appendRow(0, fullWidth);
+				return;
+			}
+
+			let currentStart = 0;
+			while (currentStart < fullWidth) {
+				const preferredEnd = currentStart + rowTargetWidth;
+
+				let nextSplit = splitPoints
+					.filter((point) => point > currentStart && point <= preferredEnd)
+					.pop();
+
+				if (!nextSplit) {
+					nextSplit = splitPoints.find((point) => point > currentStart) || fullWidth;
+				}
+
+				appendRow(currentStart, nextSplit);
+
+				if (nextSplit >= fullWidth) break;
+				currentStart = nextSplit;
 			}
 		}
 
