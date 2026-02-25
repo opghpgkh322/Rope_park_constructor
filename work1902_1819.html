@@ -2088,6 +2088,7 @@
 				if (schemaHref) {
 					if (isDynamic) angleDeg = 0;
 					const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+					group.setAttribute('data-stage-index', String(i));
 					group.setAttribute("transform", `translate(${midX},${visualMidY}) rotate(${angleDeg})`);
 					const scaleAlong = lengthPx / STAGE_BASE_WIDTH;
 					
@@ -2292,6 +2293,15 @@
 				rowSvg.setAttribute('viewBox', `${adjustedStart} 0 ${width} ${fullHeight}`);
 				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
 				rowSvg.style.pointerEvents = 'none';
+
+				rowSvg.querySelectorAll('[data-stage-index]').forEach((node) => {
+					const stageIndex = Number(node.getAttribute('data-stage-index'));
+					if (Number.isNaN(stageIndex)) return;
+					const stageCenterX = leftPadding + (stageIndex + 0.5) * stagePixelWidth;
+					if (stageCenterX <= adjustedStart || stageCenterX > adjustedEnd) {
+						node.remove();
+					}
+				});
 
 				const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 
