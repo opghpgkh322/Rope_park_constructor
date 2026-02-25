@@ -399,12 +399,18 @@
             border-radius: 8px;
             overflow: hidden;
             background: #fafafa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 360px;
+            padding: 6px 10px;
         }
 
         .summary-track-row svg {
             display: block;
-            width: 100%;
-            height: 300px;
+            width: auto;
+            height: 340px;
+            max-width: 100%;
         }
 
         .stages-container-hidden {
@@ -1870,6 +1876,7 @@
 						}
 
 						const rescueGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+						rescueGroup.setAttribute('data-interactive', 'true');
 						rescueGroup.setAttribute('transform', `translate(${x}, ${groundY + 52})`);
 						rescueGroup.style.cursor = 'pointer';
 						rescueGroup.style.pointerEvents = 'all';
@@ -1937,6 +1944,7 @@
 				const addRadius = 18;
 
 				const addGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+				addGroup.setAttribute('data-interactive', 'true');
 				addGroup.setAttribute('transform', `translate(${addX}, ${addY})`);
 				addGroup.style.cursor = isMaxPlatforms ? 'not-allowed' : 'pointer';
 				addGroup.setAttribute('role', 'button');
@@ -1979,6 +1987,7 @@
 			
 				if (platformPositions.length) {
 					const startPill = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					startPill.setAttribute('data-interactive', 'true');
 					startPill.setAttribute('transform', `translate(${platformPositions[0].x}, ${platformPositions[0].y - 120})`);
 					startPill.style.cursor = 'pointer';
 					startPill.addEventListener('click', () => openStartFinishCatalog('start'));
@@ -2008,6 +2017,7 @@
 					svg.appendChild(startPill);
 
 					const finishPill = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					finishPill.setAttribute('data-interactive', 'true');
 					finishPill.setAttribute('transform', `translate(${platformPositions[state.platformCount - 1].x}, ${platformPositions[state.platformCount - 1].y - 120})`);
 					finishPill.style.cursor = 'pointer';
 					finishPill.addEventListener('click', () => openStartFinishCatalog('finish'));
@@ -2124,6 +2134,7 @@
 				
 					// Выбор этапа по клику
 					const stageSelectGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					stageSelectGroup.setAttribute('data-interactive', 'true');
 					const stagePillOffset = stageName ? -70 : -40;
 					stageSelectGroup.setAttribute('transform', `translate(${midX}, ${visualMidY + stagePillOffset})`);
 					stageSelectGroup.style.cursor = 'pointer';
@@ -2248,6 +2259,11 @@
 			const fullHeight = viewBox?.height || Number(sourceSvg.getAttribute('height')) || 640;
 			if (!fullWidth) return;
 
+			const readOnlySvg = sourceSvg.cloneNode(true);
+			readOnlySvg.removeAttribute('id');
+			readOnlySvg.style.pointerEvents = 'none';
+			readOnlySvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+
 			const stagePixelWidth = 320;
 			const leftPadding = 220;
 			const centers = Array.from({ length: state.platformCount }, (_, idx) => leftPadding + idx * stagePixelWidth)
@@ -2255,17 +2271,18 @@
 			const splitPoints = [0, ...centers, fullWidth];
 
 			const containerWidth = rowsContainer.clientWidth || 1000;
-			const rowTargetWidth = Math.max(stagePixelWidth * 4, (containerWidth - 32) * 1.35);
+			const rowTargetWidth = Math.max(stagePixelWidth * 4.2, (containerWidth - 24) * 1.65);
+			const EDGE_EPSILON = 0.01;
 
 			const appendRow = (sliceStart, sliceEnd) => {
 				const width = Math.max(1, sliceEnd - sliceStart);
 				const row = document.createElement('div');
 				row.className = 'summary-track-row';
 
-				const rowSvg = sourceSvg.cloneNode(true);
-				rowSvg.removeAttribute('id');
+				const rowSvg = readOnlySvg.cloneNode(true);
 				rowSvg.setAttribute('viewBox', `${sliceStart} 0 ${width} ${fullHeight}`);
-				rowSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
+				rowSvg.style.pointerEvents = 'none';
 				row.appendChild(rowSvg);
 				rowsContainer.appendChild(row);
 			};
@@ -2290,7 +2307,7 @@
 				appendRow(currentStart, nextSplit);
 
 				if (nextSplit >= fullWidth) break;
-				currentStart = nextSplit;
+				currentStart = Math.min(fullWidth, nextSplit + EDGE_EPSILON);
 			}
 		}
 
