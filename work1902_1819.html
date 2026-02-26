@@ -2278,9 +2278,8 @@
 			const scale = ((fullHeight - topPadding - bottomPadding) / (maxHeight + 50));
 			const totalStages = Math.max(0, state.platformCount - 1);
 
-			const containerWidth = rowsContainer.clientWidth || 1000;
-			const usableWidth = Math.max(520, containerWidth - 28);
-			const stagesPerRow = Math.max(1, Math.floor((usableWidth - leftPadding - rightPadding) / stagePixelWidth));
+			const FIXED_STAGES_PER_ROW = 5;
+			const stagesPerRow = Math.min(FIXED_STAGES_PER_ROW, Math.max(1, totalStages));
 
 			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
 
