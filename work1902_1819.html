@@ -2278,14 +2278,13 @@
 
 			const containerWidth = rowsContainer.clientWidth || 1000;
 			const rowTargetWidth = Math.max(stagePixelWidth * 4.2, (containerWidth - 24) * 1.65);
-			const EDGE_EPSILON = 0.5;
-			const TRAILING_TRIM = 60;
+			const EDGE_EPSILON = 0;
 
 			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
 
 			const appendRow = (sliceStart, sliceEnd, isFirstRow, isLastRow) => {
 				const adjustedStart = isFirstRow ? sliceStart : Math.min(sliceEnd, sliceStart + EDGE_EPSILON);
-				const adjustedEnd = isLastRow ? sliceEnd : Math.max(adjustedStart + 1, sliceEnd - TRAILING_TRIM);
+				const adjustedEnd = sliceEnd;
 				const width = Math.max(1, adjustedEnd - adjustedStart);
 				const row = document.createElement('div');
 				row.className = 'summary-track-row';
@@ -2299,7 +2298,7 @@
 					const stageIndex = Number(node.getAttribute('data-stage-index'));
 					if (Number.isNaN(stageIndex)) return;
 					const stageCenterX = leftPadding + (stageIndex + 0.5) * stagePixelWidth;
-					if (stageCenterX <= adjustedStart || stageCenterX > adjustedEnd) {
+					if (stageCenterX < adjustedStart || stageCenterX >= adjustedEnd) {
 						node.remove();
 					}
 				});
