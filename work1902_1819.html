@@ -378,6 +378,41 @@
             width: auto;
         }
 
+        .summary-visualization {
+            background: #ffffff;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 25px;
+            max-height: 740px;
+            overflow-y: auto;
+        }
+
+        .summary-track-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .summary-track-row {
+            border: 1px solid #e6e6e6;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fafafa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 360px;
+            padding: 6px 10px;
+        }
+
+        .summary-track-row svg {
+            display: block;
+            width: auto;
+            height: 340px;
+            max-width: 100%;
+        }
+
         .stages-container-hidden {
             display: none;
         }
@@ -907,6 +942,11 @@
                 </div>
             </header>
             <h2>Расчет стоимости трассы</h2>
+
+            <div class="summary-visualization">
+                <h3 style="margin-bottom: 12px;">Схема трассы</h3>
+                <div id="summaryTrackRows" class="summary-track-rows"></div>
+            </div>
 
             <div class="cost-breakdown" id="costBreakdown"></div>
 
@@ -1836,6 +1876,7 @@
 						}
 
 						const rescueGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+						rescueGroup.setAttribute('data-interactive', 'true');
 						rescueGroup.setAttribute('transform', `translate(${x}, ${groundY + 52})`);
 						rescueGroup.style.cursor = 'pointer';
 						rescueGroup.style.pointerEvents = 'all';
@@ -1903,6 +1944,7 @@
 				const addRadius = 18;
 
 				const addGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+				addGroup.setAttribute('data-interactive', 'true');
 				addGroup.setAttribute('transform', `translate(${addX}, ${addY})`);
 				addGroup.style.cursor = isMaxPlatforms ? 'not-allowed' : 'pointer';
 				addGroup.setAttribute('role', 'button');
@@ -1945,6 +1987,7 @@
 			
 				if (platformPositions.length) {
 					const startPill = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					startPill.setAttribute('data-interactive', 'true');
 					startPill.setAttribute('transform', `translate(${platformPositions[0].x}, ${platformPositions[0].y - 120})`);
 					startPill.style.cursor = 'pointer';
 					startPill.addEventListener('click', () => openStartFinishCatalog('start'));
@@ -1974,6 +2017,7 @@
 					svg.appendChild(startPill);
 
 					const finishPill = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					finishPill.setAttribute('data-interactive', 'true');
 					finishPill.setAttribute('transform', `translate(${platformPositions[state.platformCount - 1].x}, ${platformPositions[state.platformCount - 1].y - 120})`);
 					finishPill.style.cursor = 'pointer';
 					finishPill.addEventListener('click', () => openStartFinishCatalog('finish'));
@@ -2044,6 +2088,7 @@
 				if (schemaHref) {
 					if (isDynamic) angleDeg = 0;
 					const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+					group.setAttribute('data-stage-index', String(i));
 					group.setAttribute("transform", `translate(${midX},${visualMidY}) rotate(${angleDeg})`);
 					const scaleAlong = lengthPx / STAGE_BASE_WIDTH;
 					
@@ -2056,6 +2101,7 @@
 
 					if (safetyRopeActive && stageData?.schemaId && needsSafetyRope(stageData.schemaId)) {
 						const ropeGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+						ropeGroup.setAttribute('data-stage-index', String(i));
 						ropeGroup.setAttribute("transform", `translate(${midX},${visualMidY}) rotate(${angleDeg})`);
 
 						const ropeImg = document.createElementNS("http://www.w3.org/2000/svg", "image");
@@ -2070,6 +2116,7 @@
 					}
 				} else {
 					const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+					line.setAttribute('data-stage-index', String(i));
 					line.setAttribute("x1", x1); line.setAttribute("y1", y1+SEGMENT_OFFSET_Y);
 					line.setAttribute("x2", x2); line.setAttribute("y2", y2+SEGMENT_OFFSET_Y);
 					line.setAttribute("stroke", "#333"); line.setAttribute("stroke-width", 2);
@@ -2083,6 +2130,7 @@
 				const lenM = Math.sqrt(distM*distM + heightDiff*heightDiff);
 				
 				const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				txt.setAttribute('data-stage-index', String(i));
 				txt.setAttribute('x', midX); txt.setAttribute('y', visualMidY - 95);
 				txt.setAttribute('text-anchor', 'middle'); txt.setAttribute('fill', '#333');
 				txt.setAttribute('font-weight', 'bold'); txt.textContent = `${lenM.toFixed(2)}м`;
@@ -2090,6 +2138,7 @@
 				
 					// Выбор этапа по клику
 					const stageSelectGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					stageSelectGroup.setAttribute('data-interactive', 'true');
 					const stagePillOffset = stageName ? -70 : -40;
 					stageSelectGroup.setAttribute('transform', `translate(${midX}, ${visualMidY + stagePillOffset})`);
 					stageSelectGroup.style.cursor = 'pointer';
@@ -2201,6 +2250,118 @@
 
 
 
+
+		function renderSummaryTrack() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			const rowsContainer = document.getElementById('summaryTrackRows');
+			if (!sourceSvg || !rowsContainer) return;
+
+			rowsContainer.innerHTML = '';
+
+			const viewBox = sourceSvg.viewBox?.baseVal;
+			const fullWidth = viewBox?.width || Number(sourceSvg.getAttribute('width')) || 0;
+			const fullHeight = viewBox?.height || Number(sourceSvg.getAttribute('height')) || 640;
+			if (!fullWidth) return;
+
+			const readOnlySvg = sourceSvg.cloneNode(true);
+			readOnlySvg.removeAttribute('id');
+			readOnlySvg.style.pointerEvents = 'none';
+			readOnlySvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const rightPadding = 100;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = fullHeight - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const scale = ((fullHeight - topPadding - bottomPadding) / (maxHeight + 50));
+			const totalStages = Math.max(0, state.platformCount - 1);
+
+			const containerWidth = rowsContainer.clientWidth || 1000;
+			const usableWidth = Math.max(520, containerWidth - 28);
+			const stagesPerRow = Math.max(1, Math.floor((usableWidth - leftPadding - rightPadding) / stagePixelWidth));
+
+			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
+
+			const appendRow = (startStage, endStageExclusive, isLastRow) => {
+				const firstPlatformIndex = startStage;
+				const lastPlatformIndex = Math.min(state.platformCount - 1, endStageExclusive);
+				const rowStart = firstPlatformIndex === 0
+					? 0
+					: leftPadding + firstPlatformIndex * stagePixelWidth;
+				const rowEnd = lastPlatformIndex >= state.platformCount - 1
+					? fullWidth
+					: leftPadding + lastPlatformIndex * stagePixelWidth;
+				const width = Math.max(1, rowEnd - rowStart);
+
+				const row = document.createElement('div');
+				row.className = 'summary-track-row';
+
+				const rowSvg = readOnlySvg.cloneNode(true);
+				rowSvg.setAttribute('viewBox', `${rowStart} 0 ${width} ${fullHeight}`);
+				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
+				rowSvg.style.pointerEvents = 'none';
+
+				rowSvg.querySelectorAll('[data-stage-index]').forEach((node) => {
+					const stageIndex = Number(node.getAttribute('data-stage-index'));
+					if (Number.isNaN(stageIndex)) return;
+					if (stageIndex < startStage || stageIndex >= endStageExclusive) {
+						node.remove();
+					}
+				});
+
+				const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+				for (let i = firstPlatformIndex; i <= lastPlatformIndex; i++) {
+					const x = leftPadding + i * stagePixelWidth;
+					if (x < rowStart + 8 || x > rowEnd - 8) continue;
+					const platformY = groundY - state.heights[i] * scale - 20;
+
+					const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+					heightText.setAttribute('x', x);
+					heightText.setAttribute('y', platformY - 142);
+					heightText.setAttribute('text-anchor', 'middle');
+					heightText.setAttribute('font-size', '12');
+					heightText.setAttribute('font-weight', '600');
+					heightText.setAttribute('fill', '#1f1f1f');
+					heightText.textContent = formatMeters(state.heights[i]);
+					labelsGroup.appendChild(heightText);
+				}
+
+				for (let i = startStage; i < endStageExclusive; i++) {
+					const x1 = leftPadding + i * stagePixelWidth;
+					const x2 = leftPadding + (i + 1) * stagePixelWidth;
+					const midX = (x1 + x2) / 2;
+					if (midX <= rowStart + 6 || midX >= rowEnd - 6) continue;
+
+					const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+					distText.setAttribute('x', midX);
+					distText.setAttribute('y', groundY + 42);
+					distText.setAttribute('text-anchor', 'middle');
+					distText.setAttribute('font-size', '12');
+					distText.setAttribute('font-weight', '600');
+					distText.setAttribute('fill', '#1f1f1f');
+					distText.textContent = formatMeters(state.distances[i]);
+					labelsGroup.appendChild(distText);
+				}
+
+				rowSvg.appendChild(labelsGroup);
+				row.appendChild(rowSvg);
+				rowsContainer.appendChild(row);
+			};
+
+			if (totalStages <= 0) {
+				appendRow(0, 0, true);
+				return;
+			}
+
+			for (let startStage = 0; startStage < totalStages; startStage += stagesPerRow) {
+				const endStageExclusive = Math.min(totalStages, startStage + stagesPerRow);
+				const isLastRow = endStageExclusive >= totalStages;
+				appendRow(startStage, endStageExclusive, isLastRow);
+			}
+		}
 
 		function drawPlatform(svg, x, y, stagePixelWidth) {
 			const baseWidth = 800;
@@ -2434,7 +2595,6 @@
                 svg.appendChild(rampMain);
             }
         }
-
 
 	
 			// Схемы этапов для 2D-проекции
@@ -2719,9 +2879,11 @@
 
 		state.breakdown = calculateBreakdown();
 		displayCostSummary(state.breakdown);
+		updateVisualization();
 
 		document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 		document.getElementById('costSummary').classList.add('active');
+		requestAnimationFrame(() => renderSummaryTrack());
 	}
 
 	function calculateBreakdown() {
