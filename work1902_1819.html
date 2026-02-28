@@ -400,17 +400,36 @@
             overflow: hidden;
             background: #fafafa;
             display: flex;
-            justify-content: center;
+            justify-content: flex-start;
             align-items: center;
             min-height: 360px;
             padding: 6px 10px;
+            position: relative;
         }
 
         .summary-track-row svg {
             display: block;
-            width: auto;
+            width: 100%;
             height: 340px;
-            max-width: 100%;
+        }
+
+        .summary-track-row-next {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #4e6662;
+            font-size: 24px;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid #d2dcda;
+            border-radius: 999px;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
         }
 
         .stages-container-hidden {
@@ -2278,21 +2297,16 @@
 			const scale = ((fullHeight - topPadding - bottomPadding) / (maxHeight + 50));
 			const totalStages = Math.max(0, state.platformCount - 1);
 
-			const containerWidth = rowsContainer.clientWidth || 1000;
-			const usableWidth = Math.max(520, containerWidth - 28);
-			const stagesPerRow = Math.max(1, Math.floor((usableWidth - leftPadding - rightPadding) / stagePixelWidth));
+			const stagesPerRow = 5;
 
 			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
 
 			const appendRow = (startStage, endStageExclusive, isLastRow) => {
 				const firstPlatformIndex = startStage;
 				const lastPlatformIndex = Math.min(state.platformCount - 1, endStageExclusive);
-				const rowStart = firstPlatformIndex === 0
-					? 0
-					: leftPadding + firstPlatformIndex * stagePixelWidth;
-				const rowEnd = lastPlatformIndex >= state.platformCount - 1
-					? fullWidth
-					: leftPadding + lastPlatformIndex * stagePixelWidth;
+				const stagesInRow = Math.max(1, endStageExclusive - startStage);
+				const rowStart = firstPlatformIndex * stagePixelWidth;
+				const rowEnd = rowStart + leftPadding + stagesInRow * stagePixelWidth + rightPadding;
 				const width = Math.max(1, rowEnd - rowStart);
 
 				const row = document.createElement('div');
@@ -2348,6 +2362,15 @@
 
 				rowSvg.appendChild(labelsGroup);
 				row.appendChild(rowSvg);
+
+				if (!isLastRow) {
+					const nextArrow = document.createElement('span');
+					nextArrow.className = 'summary-track-row-next';
+					nextArrow.textContent = '→';
+					nextArrow.setAttribute('aria-hidden', 'true');
+					row.appendChild(nextArrow);
+				}
+
 				rowsContainer.appendChild(row);
 			};
 
