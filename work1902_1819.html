@@ -421,6 +421,7 @@
             color: #4e6662;
             font-size: 24px;
             font-weight: 700;
+            line-height: 1;
             background: rgba(255, 255, 255, 0.92);
             border: 1px solid #d2dcda;
             border-radius: 999px;
@@ -429,7 +430,25 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            pointer-events: none;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .summary-track-row-next:hover {
+            background: #ffffff;
+            border-color: #aac5bf;
+            transform: translateY(-50%) scale(1.04);
+        }
+
+        .summary-track-row-next:active {
+            transform: translateY(-50%) scale(0.98);
+        }
+
+        .summary-track-row-next-icon {
+            display: block;
+            line-height: 1;
+            transform: translateY(-1px);
         }
 
         .stages-container-hidden {
@@ -2364,10 +2383,29 @@
 				row.appendChild(rowSvg);
 
 				if (!isLastRow) {
-					const nextArrow = document.createElement('span');
+					const nextArrow = document.createElement('button');
+					nextArrow.type = 'button';
 					nextArrow.className = 'summary-track-row-next';
-					nextArrow.textContent = '→';
-					nextArrow.setAttribute('aria-hidden', 'true');
+					nextArrow.title = 'Показать следующую часть трассы';
+					nextArrow.innerHTML = '<span class="summary-track-row-next-icon">→</span>';
+					nextArrow.addEventListener('click', () => {
+						const scrollHost = rowsContainer.closest('.summary-visualization');
+						if (!scrollHost) return;
+
+						const rowElements = Array.from(rowsContainer.querySelectorAll('.summary-track-row'));
+						const currentIndex = rowElements.indexOf(row);
+						const nextRow = rowElements[currentIndex + 1];
+						if (!nextRow) return;
+
+						const hostRect = scrollHost.getBoundingClientRect();
+						const nextRect = nextRow.getBoundingClientRect();
+						const delta = (nextRect.top - hostRect.top) - ((hostRect.height - nextRect.height) / 2);
+
+						scrollHost.scrollTo({
+							top: Math.max(0, scrollHost.scrollTop + delta),
+							behavior: 'smooth'
+						});
+					});
 					row.appendChild(nextArrow);
 				}
 
