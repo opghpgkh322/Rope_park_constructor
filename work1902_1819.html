@@ -384,33 +384,37 @@
             border-radius: 8px;
             padding: 14px;
             margin-bottom: 25px;
-            max-height: 740px;
-            overflow-y: auto;
+            overflow: hidden;
         }
 
         .summary-track-rows {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
+            width: 100%;
+            max-width: 1400px;
+            overflow-x: auto;
+            overflow-y: hidden;
         }
 
-        .summary-track-row {
-            border: 1px solid #e6e6e6;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #fafafa;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 360px;
-            padding: 6px 10px;
-        }
-
-        .summary-track-row svg {
+        .summary-track-rows svg {
             display: block;
+            height: 640px;
             width: auto;
-            height: 340px;
-            max-width: 100%;
+            max-width: none;
+        }
+
+        .btn-pdf {
+            background: linear-gradient(135deg, #1abc9c, #159f86);
+            color: #fff;
+            min-width: 220px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-pdf:hover {
+            background: linear-gradient(135deg, #16a085, #128b75);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
         }
 
         .stages-container-hidden {
@@ -974,6 +978,10 @@
 
             <div class="button-group">
                 <button class="btn-secondary" onclick="goToStep(4)">Вернуться к проектированию</button>
+                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="downloadPdfReport()">
+                    <span>📄</span>
+                    <span>Скачать PDF-отчет</span>
+                </button>
                 <button class="btn-primary" id="submitBtn" onclick="submitRequest()">Отправить заявку</button>
             </div>
         </div>
@@ -2267,100 +2275,60 @@
 			readOnlySvg.removeAttribute('id');
 			readOnlySvg.style.pointerEvents = 'none';
 			readOnlySvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			readOnlySvg.setAttribute('viewBox', `0 0 ${fullWidth} ${fullHeight}`);
+			readOnlySvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
+			readOnlySvg.style.display = 'block';
+			readOnlySvg.style.height = '640px';
+			readOnlySvg.style.width = `${fullWidth}px`;
+			readOnlySvg.style.maxWidth = 'none';
 
 			const stagePixelWidth = 320;
 			const leftPadding = 220;
-			const rightPadding = 100;
 			const topPadding = 30;
 			const bottomPadding = 120;
 			const groundY = fullHeight - bottomPadding;
 			const maxHeight = Math.max(...state.heights, 6);
 			const scale = ((fullHeight - topPadding - bottomPadding) / (maxHeight + 50));
-			const totalStages = Math.max(0, state.platformCount - 1);
-
-			const containerWidth = rowsContainer.clientWidth || 1000;
-			const usableWidth = Math.max(520, containerWidth - 28);
-			const stagesPerRow = Math.max(1, Math.floor((usableWidth - leftPadding - rightPadding) / stagePixelWidth));
-
 			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
 
-			const appendRow = (startStage, endStageExclusive, isLastRow) => {
-				const firstPlatformIndex = startStage;
-				const lastPlatformIndex = Math.min(state.platformCount - 1, endStageExclusive);
-				const rowStart = firstPlatformIndex === 0
-					? 0
-					: leftPadding + firstPlatformIndex * stagePixelWidth;
-				const rowEnd = lastPlatformIndex >= state.platformCount - 1
-					? fullWidth
-					: leftPadding + lastPlatformIndex * stagePixelWidth;
-				const width = Math.max(1, rowEnd - rowStart);
+			const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			labelsGroup.setAttribute('data-summary-labels', 'true');
 
-				const row = document.createElement('div');
-				row.className = 'summary-track-row';
+			for (let i = 0; i < state.platformCount; i++) {
+				const x = leftPadding + i * stagePixelWidth;
+				const platformY = groundY - state.heights[i] * scale - 20;
 
-				const rowSvg = readOnlySvg.cloneNode(true);
-				rowSvg.setAttribute('viewBox', `${rowStart} 0 ${width} ${fullHeight}`);
-				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
-				rowSvg.style.pointerEvents = 'none';
-
-				rowSvg.querySelectorAll('[data-stage-index]').forEach((node) => {
-					const stageIndex = Number(node.getAttribute('data-stage-index'));
-					if (Number.isNaN(stageIndex)) return;
-					if (stageIndex < startStage || stageIndex >= endStageExclusive) {
-						node.remove();
-					}
-				});
-
-				const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-
-				for (let i = firstPlatformIndex; i <= lastPlatformIndex; i++) {
-					const x = leftPadding + i * stagePixelWidth;
-					if (x < rowStart + 8 || x > rowEnd - 8) continue;
-					const platformY = groundY - state.heights[i] * scale - 20;
-
-					const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-					heightText.setAttribute('x', x);
-					heightText.setAttribute('y', platformY - 142);
-					heightText.setAttribute('text-anchor', 'middle');
-					heightText.setAttribute('font-size', '12');
-					heightText.setAttribute('font-weight', '600');
-					heightText.setAttribute('fill', '#1f1f1f');
-					heightText.textContent = formatMeters(state.heights[i]);
-					labelsGroup.appendChild(heightText);
-				}
-
-				for (let i = startStage; i < endStageExclusive; i++) {
-					const x1 = leftPadding + i * stagePixelWidth;
-					const x2 = leftPadding + (i + 1) * stagePixelWidth;
-					const midX = (x1 + x2) / 2;
-					if (midX <= rowStart + 6 || midX >= rowEnd - 6) continue;
-
-					const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-					distText.setAttribute('x', midX);
-					distText.setAttribute('y', groundY + 42);
-					distText.setAttribute('text-anchor', 'middle');
-					distText.setAttribute('font-size', '12');
-					distText.setAttribute('font-weight', '600');
-					distText.setAttribute('fill', '#1f1f1f');
-					distText.textContent = formatMeters(state.distances[i]);
-					labelsGroup.appendChild(distText);
-				}
-
-				rowSvg.appendChild(labelsGroup);
-				row.appendChild(rowSvg);
-				rowsContainer.appendChild(row);
-			};
-
-			if (totalStages <= 0) {
-				appendRow(0, 0, true);
-				return;
+				const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				heightText.setAttribute('x', x);
+				heightText.setAttribute('y', platformY - 142);
+				heightText.setAttribute('text-anchor', 'middle');
+				heightText.setAttribute('font-size', '12');
+				heightText.setAttribute('font-weight', '600');
+				heightText.setAttribute('fill', '#1f1f1f');
+				heightText.textContent = formatMeters(state.heights[i]);
+				labelsGroup.appendChild(heightText);
 			}
 
-			for (let startStage = 0; startStage < totalStages; startStage += stagesPerRow) {
-				const endStageExclusive = Math.min(totalStages, startStage + stagesPerRow);
-				const isLastRow = endStageExclusive >= totalStages;
-				appendRow(startStage, endStageExclusive, isLastRow);
+			for (let i = 0; i < state.platformCount - 1; i++) {
+				const x1 = leftPadding + i * stagePixelWidth;
+				const x2 = leftPadding + (i + 1) * stagePixelWidth;
+				const midX = (x1 + x2) / 2;
+
+				const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				distText.setAttribute('x', midX);
+				distText.setAttribute('y', groundY + 42);
+				distText.setAttribute('text-anchor', 'middle');
+				distText.setAttribute('font-size', '12');
+				distText.setAttribute('font-weight', '600');
+				distText.setAttribute('fill', '#1f1f1f');
+				distText.textContent = formatMeters(state.distances[i]);
+				labelsGroup.appendChild(distText);
 			}
+
+			readOnlySvg.querySelectorAll('[data-summary-labels="true"]').forEach((node) => node.remove());
+			readOnlySvg.appendChild(labelsGroup);
+
+			rowsContainer.appendChild(readOnlySvg);
 		}
 
 		function drawPlatform(svg, x, y, stagePixelWidth) {
@@ -2881,10 +2849,10 @@
 		displayCostSummary(state.breakdown);
 		updateVisualization();
 
-		document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-		document.getElementById('costSummary').classList.add('active');
-		requestAnimationFrame(() => renderSummaryTrack());
-	}
+			document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+			document.getElementById('costSummary').classList.add('active');
+			requestAnimationFrame(() => renderSummaryTrack());
+		}
 
 	function calculateBreakdown() {
 		let items = [];
@@ -3195,6 +3163,7 @@ Email: ${email}
 				try {
 					const clonedSvg = svg.cloneNode(true);
 					clonedSvg.querySelectorAll('foreignObject').forEach((node) => node.remove());
+					normalizeSvgImageHrefs(clonedSvg);
 
 					const viewBox = clonedSvg.viewBox && clonedSvg.viewBox.baseVal
 						? clonedSvg.viewBox.baseVal
@@ -3252,9 +3221,279 @@ Email: ${email}
 			});
 		}
 
+		function normalizeSvgImageHrefs(svgElement) {
+			svgElement.querySelectorAll('image').forEach((imgNode) => {
+				const href = imgNode.getAttribute('href') || imgNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href) return;
+				if (/^(data:|blob:|https?:|file:)/i.test(href)) return;
+				const absoluteHref = new URL(href, window.location.href).href;
+				imgNode.setAttribute('href', absoluteHref);
+				imgNode.setAttributeNS('http://www.w3.org/1999/xlink', 'href', absoluteHref);
+			});
+		}
+
+		function blobToDataUrl(blob) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onloadend = () => resolve(reader.result);
+				reader.onerror = reject;
+				reader.readAsDataURL(blob);
+			});
+		}
+
+		function escapeHtml(value) {
+			return String(value ?? '')
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
+
+		function buildPdfReportHtml(trackImageDataUrl = '') {
+			const logoSrc = document.querySelector('#costSummary .logo img')?.src || '';
+			const firstName = document.getElementById('firstName')?.value.trim() || '-';
+			const lastName = document.getElementById('lastName')?.value.trim() || '-';
+			const phone = document.getElementById('phone')?.value.trim() || '-';
+			const email = document.getElementById('email')?.value.trim() || '-';
+			const reportDate = new Date().toLocaleString('ru-RU');
+
+			const itemsRows = (state.breakdown?.items || []).map((item, index) => `
+				<tr>
+					<td>${index + 1}</td>
+					<td class="name-cell">${escapeHtml(item.name)}</td>
+					<td>${escapeHtml(item.qty)} ${escapeHtml(item.unit)}</td>
+					<td>${Number(item.price).toLocaleString('ru-RU')} ₽</td>
+					<td><strong>${Number(item.total).toLocaleString('ru-RU')} ₽</strong></td>
+				</tr>
+			`).join('');
+
+			const totalCost = Number(state.breakdown?.totalCost || 0).toLocaleString('ru-RU');
+			const imageList = Array.isArray(trackImageDataUrl) ? trackImageDataUrl : [trackImageDataUrl].filter(Boolean);
+			const trackImageBlock = imageList.length
+				? imageList.map((src, index) => `
+					<div style="margin-bottom: 14px;">
+						<div style="font-size:12px; color:#5d7270; margin-bottom:6px;">Сегмент схемы ${index + 1}</div>
+						<img src="${src}" alt="Схема трассы ${index + 1}" style="width: 100%; border: 1px solid #dce9e6; border-radius: 8px;">
+					</div>
+				`).join('')
+				: '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
+
+			return `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>PDF отчет — Space Concept</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 28px; color:#243330; }
+.header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1abc9c; padding-bottom:10px; }
+.logo { height:58px; }
+.badge { background:#1abc9c; color:#fff; padding:8px 12px; border-radius:999px; font-weight:700; }
+h1 { font-size:24px; margin:18px 0 6px; }
+h2 { font-size:18px; margin:18px 0 10px; color:#167f6f; }
+.meta { color:#5d7270; font-size:13px; margin-bottom:8px; }
+.card { border:1px solid #dce9e6; border-radius:10px; padding:14px; margin:12px 0; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { border-bottom:1px solid #ebf1ef; padding:8px 6px; text-align:left; vertical-align:top; }
+th { background:#f4fbf9; }
+.name-cell { white-space: normal; word-break: break-word; min-width: 240px; }
+.total { margin-top:10px; font-size:18px; font-weight:700; text-align:right; color:#135f54; }
+.footer { margin-top:20px; padding-top:10px; border-top:2px solid #1abc9c; font-size:13px; color:#456; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="header">
+  <img class="logo" src="${logoSrc}" alt="Space Concept">
+  <div class="badge">PDF ОТЧЕТ</div>
+</div>
+
+<h1>Коммерческий расчет трассы веревочного парка</h1>
+<div class="meta">Дата формирования: ${reportDate}</div>
+
+<div class="card">
+  <strong>Клиент:</strong> ${escapeHtml(firstName)} ${escapeHtml(lastName)}<br>
+  <strong>Телефон:</strong> ${escapeHtml(phone)}<br>
+  <strong>Email:</strong> ${escapeHtml(email)}
+</div>
+
+<h2>Полная схема трассы</h2>
+<div class="card">${trackImageBlock}</div>
+
+<h2>Смета по элементам (как в чеке)</h2>
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>№</th>
+        <th>Элемент</th>
+        <th>Кол-во</th>
+        <th>Цена</th>
+        <th>Сумма</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsRows}
+    </tbody>
+  </table>
+  <div class="total">ИТОГО: ${totalCost} ₽</div>
+</div>
+
+<div class="footer">
+  <div style="margin-bottom:8px; font-style: italic; color:#5f6f6c;">
+    * Данный расчет является предварительным. В итоговую сумму входит производство изделий и комплектация материалов для отправки заказчику. Услуги монтажа трассы не включены — их стоимость рассчитывается и обсуждается индивидуально.
+  </div>
+  <strong>Space Concept — контакты:</strong><br>
+  fp@spaceconcept.ru · 10:00 - 18:00 · +7 (911) 925 42 34
+</div>
+</body>
+</html>`;
+		}
+
+		async function svgElementToPngDataUrl(svgElement, scale = 2) {
+			const serializer = new XMLSerializer();
+			const svgString = serializer.serializeToString(svgElement);
+			const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+			const svgUrl = URL.createObjectURL(svgBlob);
+
+			try {
+				return await new Promise((resolve, reject) => {
+					const img = new Image();
+					img.onload = () => {
+						const width = Number(svgElement.getAttribute('width')) || svgElement.viewBox.baseVal.width;
+						const height = Number(svgElement.getAttribute('height')) || svgElement.viewBox.baseVal.height;
+						const canvas = document.createElement('canvas');
+						canvas.width = width * scale;
+						canvas.height = height * scale;
+						const ctx = canvas.getContext('2d');
+						ctx.fillStyle = '#ffffff';
+						ctx.fillRect(0, 0, canvas.width, canvas.height);
+						ctx.scale(scale, scale);
+						ctx.drawImage(img, 0, 0, width, height);
+						resolve(canvas.toDataURL('image/png', 0.95));
+					};
+					img.onerror = () => reject(new Error('Ошибка подготовки сегмента схемы'));
+					img.src = svgUrl;
+				});
+			} finally {
+				URL.revokeObjectURL(svgUrl);
+			}
+		}
+
+		async function buildTrackRowsForPdf() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			if (!sourceSvg) return [];
+
+			const viewBox = sourceSvg.viewBox?.baseVal;
+			const fullWidth = viewBox?.width || Number(sourceSvg.getAttribute('width')) || 0;
+			const fullHeight = viewBox?.height || Number(sourceSvg.getAttribute('height')) || 640;
+			if (!fullWidth) return [];
+
+			const cleanSvg = sourceSvg.cloneNode(true);
+			cleanSvg.removeAttribute('id');
+			cleanSvg.style.pointerEvents = 'none';
+			cleanSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			normalizeSvgImageHrefs(cleanSvg);
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const rightPadding = 100;
+			const stagesPerRow = 5;
+			const totalStages = Math.max(0, state.platformCount - 1);
+
+			const rows = [];
+			if (totalStages <= 0) {
+				rows.push({ startStage: 0, endStageExclusive: 0 });
+			} else {
+				for (let startStage = 0; startStage < totalStages; startStage += stagesPerRow) {
+					rows.push({
+						startStage,
+						endStageExclusive: Math.min(totalStages, startStage + stagesPerRow)
+					});
+				}
+			}
+
+			const result = [];
+			for (const rowInfo of rows) {
+				const { startStage, endStageExclusive } = rowInfo;
+				const stagesInRow = Math.max(1, endStageExclusive - startStage);
+				const rowStart = startStage * stagePixelWidth;
+				const rowEnd = rowStart + leftPadding + stagesInRow * stagePixelWidth + rightPadding;
+				const width = Math.max(1, rowEnd - rowStart);
+
+				const rowSvg = cleanSvg.cloneNode(true);
+				rowSvg.setAttribute('viewBox', `${rowStart} 0 ${width} ${fullHeight}`);
+				rowSvg.setAttribute('width', width);
+				rowSvg.setAttribute('height', fullHeight);
+				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
+
+				rowSvg.querySelectorAll('[data-stage-index]').forEach((node) => {
+					const stageIndex = Number(node.getAttribute('data-stage-index'));
+					if (Number.isNaN(stageIndex)) return;
+					if (stageIndex < startStage || stageIndex >= endStageExclusive) node.remove();
+				});
+
+				const rowImage = await svgElementToPngDataUrl(rowSvg, 2);
+				result.push(rowImage);
+			}
+
+			return result;
+		}
+
+		async function downloadPdfReport() {
+			if (!state.breakdown) {
+				alert('Сначала рассчитайте стоимость трассы.');
+				return;
+			}
+
+			const btn = document.getElementById('downloadPdfBtn');
+			if (btn) {
+				btn.disabled = true;
+				btn.textContent = 'Подготовка PDF...';
+			}
+
+			try {
+				updateVisualization();
+
+				let trackImageDataUrl = [];
+				try {
+					trackImageDataUrl = await Promise.race([
+						buildTrackRowsForPdf(),
+						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 8000))
+					]);
+
+					if (!trackImageDataUrl.length) {
+						const schemaBlob = await svgToPngBlob();
+						if (schemaBlob) trackImageDataUrl = [await blobToDataUrl(schemaBlob)];
+					}
+				} catch (error) {
+					console.warn('Не удалось встроить схему в PDF:', error);
+				}
+
+				const reportWindow = window.open('', '_blank');
+				if (!reportWindow) {
+					alert('Браузер заблокировал всплывающее окно. Разрешите pop-up для экспорта PDF.');
+					return;
+				}
+
+				reportWindow.document.open();
+				reportWindow.document.write(buildPdfReportHtml(trackImageDataUrl));
+				reportWindow.document.close();
+				reportWindow.focus();
+				setTimeout(() => reportWindow.print(), 500);
+			} catch (error) {
+				console.error('Ошибка формирования PDF:', error);
+				alert('Не удалось сформировать PDF-отчет. Попробуйте еще раз.');
+			} finally {
+				if (btn) {
+					btn.disabled = false;
+					btn.innerHTML = '<span>📄</span><span>Скачать PDF-отчет</span>';
+				}
+			}
+		}
 
 
-		
+
+
 		function splitTelegramMessage(text, maxLength = 3800) {
 			const lines = text.split('\n');
 			const parts = [];
