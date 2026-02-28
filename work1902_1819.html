@@ -2262,6 +2262,52 @@
 			readOnlySvg.style.width = `${fullWidth}px`;
 			readOnlySvg.style.maxWidth = 'none';
 
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = fullHeight - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const scale = ((fullHeight - topPadding - bottomPadding) / (maxHeight + 50));
+			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
+
+			const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			labelsGroup.setAttribute('data-summary-labels', 'true');
+
+			for (let i = 0; i < state.platformCount; i++) {
+				const x = leftPadding + i * stagePixelWidth;
+				const platformY = groundY - state.heights[i] * scale - 20;
+
+				const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				heightText.setAttribute('x', x);
+				heightText.setAttribute('y', platformY - 142);
+				heightText.setAttribute('text-anchor', 'middle');
+				heightText.setAttribute('font-size', '12');
+				heightText.setAttribute('font-weight', '600');
+				heightText.setAttribute('fill', '#1f1f1f');
+				heightText.textContent = formatMeters(state.heights[i]);
+				labelsGroup.appendChild(heightText);
+			}
+
+			for (let i = 0; i < state.platformCount - 1; i++) {
+				const x1 = leftPadding + i * stagePixelWidth;
+				const x2 = leftPadding + (i + 1) * stagePixelWidth;
+				const midX = (x1 + x2) / 2;
+
+				const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				distText.setAttribute('x', midX);
+				distText.setAttribute('y', groundY + 42);
+				distText.setAttribute('text-anchor', 'middle');
+				distText.setAttribute('font-size', '12');
+				distText.setAttribute('font-weight', '600');
+				distText.setAttribute('fill', '#1f1f1f');
+				distText.textContent = formatMeters(state.distances[i]);
+				labelsGroup.appendChild(distText);
+			}
+
+			readOnlySvg.querySelectorAll('[data-summary-labels="true"]').forEach((node) => node.remove());
+			readOnlySvg.appendChild(labelsGroup);
+
 			rowsContainer.appendChild(readOnlySvg);
 		}
 
