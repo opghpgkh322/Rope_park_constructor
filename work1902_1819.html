@@ -3163,6 +3163,7 @@ Email: ${email}
 				try {
 					const clonedSvg = svg.cloneNode(true);
 					clonedSvg.querySelectorAll('foreignObject').forEach((node) => node.remove());
+					normalizeSvgImageHrefs(clonedSvg);
 
 					const viewBox = clonedSvg.viewBox && clonedSvg.viewBox.baseVal
 						? clonedSvg.viewBox.baseVal
@@ -3217,6 +3218,17 @@ Email: ${email}
 				} catch (error) {
 					reject(error);
 				}
+			});
+		}
+
+		function normalizeSvgImageHrefs(svgElement) {
+			svgElement.querySelectorAll('image').forEach((imgNode) => {
+				const href = imgNode.getAttribute('href') || imgNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href) return;
+				if (/^(data:|blob:|https?:|file:)/i.test(href)) return;
+				const absoluteHref = new URL(href, window.location.href).href;
+				imgNode.setAttribute('href', absoluteHref);
+				imgNode.setAttributeNS('http://www.w3.org/1999/xlink', 'href', absoluteHref);
 			});
 		}
 
@@ -3380,6 +3392,7 @@ th { background:#f4fbf9; }
 			cleanSvg.removeAttribute('id');
 			cleanSvg.style.pointerEvents = 'none';
 			cleanSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			normalizeSvgImageHrefs(cleanSvg);
 
 			const stagePixelWidth = 320;
 			const leftPadding = 220;
