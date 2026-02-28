@@ -401,6 +401,28 @@
             max-width: none;
         }
 
+        .summary-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 12px;
+        }
+
+        .btn-pdf {
+            background: linear-gradient(135deg, #1abc9c, #159f86);
+            color: #fff;
+            min-width: 240px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-pdf:hover {
+            background: linear-gradient(135deg, #16a085, #128b75);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+        }
+
         .stages-container-hidden {
             display: none;
         }
@@ -930,6 +952,13 @@
                 </div>
             </header>
             <h2>Расчет стоимости трассы</h2>
+
+            <div class="summary-toolbar">
+                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="downloadPdfReport()">
+                    <span>📄</span>
+                    <span>Скачать PDF-отчет</span>
+                </button>
+            </div>
 
             <div class="summary-visualization">
                 <h3 style="margin-bottom: 12px;">Схема трассы</h3>
@@ -3200,9 +3229,164 @@ Email: ${email}
 			});
 		}
 
+		function blobToDataUrl(blob) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onloadend = () => resolve(reader.result);
+				reader.onerror = reject;
+				reader.readAsDataURL(blob);
+			});
+		}
+
+		function escapeHtml(value) {
+			return String(value ?? '')
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
+
+		function buildPdfReportHtml(trackImageDataUrl = '') {
+			const logoSrc = document.querySelector('#costSummary .logo img')?.src || '';
+			const firstName = document.getElementById('firstName')?.value.trim() || '-';
+			const lastName = document.getElementById('lastName')?.value.trim() || '-';
+			const phone = document.getElementById('phone')?.value.trim() || '-';
+			const email = document.getElementById('email')?.value.trim() || '-';
+			const reportDate = new Date().toLocaleString('ru-RU');
+
+			const itemsRows = (state.breakdown?.items || []).map((item, index) => `
+				<tr>
+					<td>${index + 1}</td>
+					<td>${escapeHtml(item.name)}</td>
+					<td>${escapeHtml(item.qty)} ${escapeHtml(item.unit)}</td>
+					<td>${Number(item.price).toLocaleString('ru-RU')} ₽</td>
+					<td><strong>${Number(item.total).toLocaleString('ru-RU')} ₽</strong></td>
+				</tr>
+			`).join('');
+
+			const totalCost = Number(state.breakdown?.totalCost || 0).toLocaleString('ru-RU');
+			const trackImageBlock = trackImageDataUrl
+				? `<img src="${trackImageDataUrl}" alt="Схема трассы" style="width: 100%; border: 1px solid #dce9e6; border-radius: 8px;">`
+				: '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
+
+			return `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>PDF отчет — Space Concept</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 28px; color:#243330; }
+.header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1abc9c; padding-bottom:10px; }
+.logo { height:58px; }
+.badge { background:#1abc9c; color:#fff; padding:8px 12px; border-radius:999px; font-weight:700; }
+h1 { font-size:24px; margin:18px 0 6px; }
+h2 { font-size:18px; margin:18px 0 10px; color:#167f6f; }
+.meta { color:#5d7270; font-size:13px; margin-bottom:8px; }
+.card { border:1px solid #dce9e6; border-radius:10px; padding:14px; margin:12px 0; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { border-bottom:1px solid #ebf1ef; padding:8px 6px; text-align:left; vertical-align:top; }
+th { background:#f4fbf9; }
+.total { margin-top:10px; font-size:18px; font-weight:700; text-align:right; color:#135f54; }
+.footer { margin-top:20px; padding-top:10px; border-top:2px solid #1abc9c; font-size:13px; color:#456; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="header">
+  <img class="logo" src="${logoSrc}" alt="Space Concept">
+  <div class="badge">PDF ОТЧЕТ</div>
+</div>
+
+<h1>Коммерческий расчет трассы веревочного парка</h1>
+<div class="meta">Дата формирования: ${reportDate}</div>
+
+<div class="card">
+  <strong>Клиент:</strong> ${escapeHtml(firstName)} ${escapeHtml(lastName)}<br>
+  <strong>Телефон:</strong> ${escapeHtml(phone)}<br>
+  <strong>Email:</strong> ${escapeHtml(email)}
+</div>
+
+<h2>Полная схема трассы</h2>
+<div class="card">${trackImageBlock}</div>
+
+<h2>Смета по элементам (как в чеке)</h2>
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>№</th>
+        <th>Элемент</th>
+        <th>Кол-во</th>
+        <th>Цена</th>
+        <th>Сумма</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsRows}
+    </tbody>
+  </table>
+  <div class="total">ИТОГО: ${totalCost} ₽</div>
+</div>
+
+<div class="footer">
+  <strong>Space Concept — контакты:</strong><br>
+  fp@spaceconcept.ru · 10:00 - 18:00 · +7 (911) 925 42 34
+</div>
+</body>
+</html>`;
+		}
+
+		async function downloadPdfReport() {
+			if (!state.breakdown) {
+				alert('Сначала рассчитайте стоимость трассы.');
+				return;
+			}
+
+			const btn = document.getElementById('downloadPdfBtn');
+			if (btn) {
+				btn.disabled = true;
+				btn.textContent = 'Подготовка PDF...';
+			}
+
+			try {
+				updateVisualization();
+
+				let trackImageDataUrl = '';
+				try {
+					const schemaBlob = await Promise.race([
+						svgToPngBlob(),
+						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 8000))
+					]);
+					if (schemaBlob) trackImageDataUrl = await blobToDataUrl(schemaBlob);
+				} catch (error) {
+					console.warn('Не удалось встроить схему в PDF:', error);
+				}
+
+				const reportWindow = window.open('', '_blank');
+				if (!reportWindow) {
+					alert('Браузер заблокировал всплывающее окно. Разрешите pop-up для экспорта PDF.');
+					return;
+				}
+
+				reportWindow.document.open();
+				reportWindow.document.write(buildPdfReportHtml(trackImageDataUrl));
+				reportWindow.document.close();
+				reportWindow.focus();
+				setTimeout(() => reportWindow.print(), 500);
+			} catch (error) {
+				console.error('Ошибка формирования PDF:', error);
+				alert('Не удалось сформировать PDF-отчет. Попробуйте еще раз.');
+			} finally {
+				if (btn) {
+					btn.disabled = false;
+					btn.innerHTML = '<span>📄</span><span>Скачать PDF-отчет</span>';
+				}
+			}
+		}
 
 
-		
+
+
 		function splitTelegramMessage(text, maxLength = 3800) {
 			const lines = text.split('\n');
 			const parts = [];
