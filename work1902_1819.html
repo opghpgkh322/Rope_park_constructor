@@ -401,16 +401,10 @@
             max-width: none;
         }
 
-        .summary-toolbar {
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 12px;
-        }
-
         .btn-pdf {
             background: linear-gradient(135deg, #1abc9c, #159f86);
             color: #fff;
-            min-width: 240px;
+            min-width: 220px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -953,13 +947,6 @@
             </header>
             <h2>Расчет стоимости трассы</h2>
 
-            <div class="summary-toolbar">
-                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="downloadPdfReport()">
-                    <span>📄</span>
-                    <span>Скачать PDF-отчет</span>
-                </button>
-            </div>
-
             <div class="summary-visualization">
                 <h3 style="margin-bottom: 12px;">Схема трассы</h3>
                 <div id="summaryTrackRows" class="summary-track-rows"></div>
@@ -991,6 +978,10 @@
 
             <div class="button-group">
                 <button class="btn-secondary" onclick="goToStep(4)">Вернуться к проектированию</button>
+                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="downloadPdfReport()">
+                    <span>📄</span>
+                    <span>Скачать PDF-отчет</span>
+                </button>
                 <button class="btn-primary" id="submitBtn" onclick="submitRequest()">Отправить заявку</button>
             </div>
         </div>
@@ -3255,15 +3246,26 @@ Email: ${email}
 			const email = document.getElementById('email')?.value.trim() || '-';
 			const reportDate = new Date().toLocaleString('ru-RU');
 
-			const itemsRows = (state.breakdown?.items || []).map((item, index) => `
+			const stageNameToSchema = new Map((structureDatabase.stages || []).map((stage) => [stage.name, stage.schemaId]));
+
+			const itemsRows = (state.breakdown?.items || []).map((item, index) => {
+				const schemaId = stageNameToSchema.get(item.name);
+				const imageFile = schemaId ? STAGE_SCHEMAS[schemaId] : null;
+				const imageSrc = imageFile ? new URL(imageFile, window.location.href).href : '';
+				const imageCell = imageSrc
+					? `<img src="${imageSrc}" alt="${escapeHtml(item.name)}" style="width: 56px; height: 56px; object-fit: contain; display: block; margin: 0 auto;">`
+					: '<span style="color:#99a;">—</span>';
+
+				return `
 				<tr>
 					<td>${index + 1}</td>
-					<td>${escapeHtml(item.name)}</td>
+					<td>${imageCell}</td>
+					<td class="name-cell">${escapeHtml(item.name)}</td>
 					<td>${escapeHtml(item.qty)} ${escapeHtml(item.unit)}</td>
 					<td>${Number(item.price).toLocaleString('ru-RU')} ₽</td>
 					<td><strong>${Number(item.total).toLocaleString('ru-RU')} ₽</strong></td>
 				</tr>
-			`).join('');
+			`;}).join('');
 
 			const totalCost = Number(state.breakdown?.totalCost || 0).toLocaleString('ru-RU');
 			const trackImageBlock = trackImageDataUrl
@@ -3287,6 +3289,7 @@ h2 { font-size:18px; margin:18px 0 10px; color:#167f6f; }
 table { width:100%; border-collapse:collapse; font-size:13px; }
 th, td { border-bottom:1px solid #ebf1ef; padding:8px 6px; text-align:left; vertical-align:top; }
 th { background:#f4fbf9; }
+.name-cell { white-space: normal; word-break: break-word; min-width: 240px; }
 .total { margin-top:10px; font-size:18px; font-weight:700; text-align:right; color:#135f54; }
 .footer { margin-top:20px; padding-top:10px; border-top:2px solid #1abc9c; font-size:13px; color:#456; line-height:1.7; }
 </style>
@@ -3315,6 +3318,7 @@ th { background:#f4fbf9; }
     <thead>
       <tr>
         <th>№</th>
+        <th>Изображение</th>
         <th>Элемент</th>
         <th>Кол-во</th>
         <th>Цена</th>
@@ -3329,6 +3333,9 @@ th { background:#f4fbf9; }
 </div>
 
 <div class="footer">
+  <div style="margin-bottom:8px; font-style: italic; color:#5f6f6c;">
+    * Данный расчет является предварительным. В итоговую сумму входит производство изделий и комплектация материалов для отправки заказчику. Услуги монтажа трассы не включены — их стоимость рассчитывается и обсуждается индивидуально.
+  </div>
   <strong>Space Concept — контакты:</strong><br>
   fp@spaceconcept.ru · 10:00 - 18:00 · +7 (911) 925 42 34
 </div>
