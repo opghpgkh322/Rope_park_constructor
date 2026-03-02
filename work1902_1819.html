@@ -3548,6 +3548,20 @@ th { background:#f4fbf9; }
 			return { pngBlob, jpgBlob, pngDataUrl, jpgDataUrl };
 		}
 
+		async function withTimeout(taskPromise, timeoutMs, message) {
+			let timeoutId;
+			try {
+				return await Promise.race([
+					taskPromise,
+					new Promise((_, reject) => {
+						timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+					})
+				]);
+			} finally {
+				if (timeoutId) clearTimeout(timeoutId);
+			}
+		}
+
 		async function downloadPdfReport() {
 			if (!state.breakdown) {
 				alert('Сначала рассчитайте стоимость трассы.');
@@ -3565,10 +3579,11 @@ th { background:#f4fbf9; }
 
 				let trackImageDataUrl = [];
 				try {
-					const assets = await Promise.race([
+					const assets = await withTimeout(
 						buildTrackExportAssets(),
-						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 12000))
-					]);
+						45000,
+						'Превышено время подготовки схемы для PDF'
+					);
 					if (assets?.jpgDataUrl || assets?.pngDataUrl) {
 						trackImageDataUrl = [assets.jpgDataUrl || assets.pngDataUrl];
 					}
@@ -3658,10 +3673,11 @@ th { background:#f4fbf9; }
 
 				let exportAssets = null;
 				try {
-					exportAssets = await Promise.race([
+					exportAssets = await withTimeout(
 						buildTrackExportAssets(),
-						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 8000))
-					]);
+						30000,
+						'Превышено время подготовки схемы для Telegram'
+					);
 				} catch (error) {
 					console.warn('Не удалось подготовить схему:', error);
 				}
