@@ -2106,19 +2106,6 @@
 					img.setAttribute("width", lengthPx); img.setAttribute("height", STAGE_BASE_HEIGHT*scaleAlong);
 					img.setAttribute("preserveAspectRatio", "none");
 
-					img.onerror = () => {
-						if (group.parentNode) group.remove();
-						const fallbackLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-						fallbackLine.setAttribute('data-stage-index', String(i));
-						fallbackLine.setAttribute("x1", x1);
-						fallbackLine.setAttribute("y1", y1 + SEGMENT_OFFSET_Y);
-						fallbackLine.setAttribute("x2", x2);
-						fallbackLine.setAttribute("y2", y2 + SEGMENT_OFFSET_Y);
-						fallbackLine.setAttribute("stroke", "#333");
-						fallbackLine.setAttribute("stroke-width", "2");
-						fallbackLine.setAttribute("stroke-dasharray", "6,4");
-						svg.appendChild(fallbackLine);
-					};
 					group.appendChild(img); svg.appendChild(group);
 
 					if (safetyRopeActive && stageData?.schemaId && needsSafetyRope(stageData.schemaId)) {
@@ -3268,9 +3255,13 @@ Email: ${email}
 
 		async function drawTrackSvgImagesToCanvas(ctx, sourceSvg, scale) {
 			const imageNodes = Array.from(sourceSvg.querySelectorAll('image'));
+			const stageSchemaFiles = new Set(Object.values(STAGE_SCHEMAS || {}));
 			for (const imageNode of imageNodes) {
 				const href = imageNode.getAttribute('href') || imageNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
 				if (!href) continue;
+				const normalizedHref = href.split('?')[0];
+				const isStageSchema = Array.from(stageSchemaFiles).some((file) => normalizedHref === file || normalizedHref.endsWith('/' + file));
+				if (isStageSchema) continue;
 
 				const absoluteHref = /^(data:|blob:|https?:|file:)/i.test(href)
 					? href
@@ -3302,6 +3293,57 @@ Email: ${email}
 					matrix.f * scale
 				);
 				ctx.drawImage(img, x, y, width, height);
+				ctx.restore();
+			}
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const height = (sourceSvg.viewBox && sourceSvg.viewBox.baseVal?.height) || Number(sourceSvg.getAttribute('height')) || 640;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = height - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const heightScale = ((height - topPadding - bottomPadding) / (maxHeight + 50));
+			const STAGE_BASE_WIDTH = 800;
+			const STAGE_BASE_HEIGHT = 520;
+			const SEGMENT_OFFSET_Y = -20;
+
+			for (let i = 0; i < state.platformCount - 1; i++) {
+				const stageData = state.stages?.[i];
+				if (!stageData?.schemaId || !STAGE_SCHEMAS[stageData.schemaId]) continue;
+
+				const x1 = leftPadding + i * stagePixelWidth;
+				const x2 = leftPadding + (i + 1) * stagePixelWidth;
+				const y1 = groundY - state.heights[i] * heightScale - 20 + 15;
+				const y2 = groundY - state.heights[i + 1] * heightScale - 20 + 15;
+				const dx = x2 - x1;
+				const dy = y2 - y1;
+				const lengthPx = Math.hypot(dx, dy);
+				const midX = (x1 + x2) / 2;
+				const midY = (y1 + y2) / 2;
+				const visualMidY = midY + SEGMENT_OFFSET_Y;
+				const scaleAlong = lengthPx / STAGE_BASE_WIDTH;
+				const angleDeg = isDynamicStage(stageData.schemaId) ? 0 : (Math.atan2(dy, dx) * 180 / Math.PI);
+
+				const stageSrc = new URL(STAGE_SCHEMAS[stageData.schemaId], window.location.href).href;
+				let stageImg;
+				try {
+					stageImg = await loadImageElement(stageSrc);
+				} catch {
+					continue;
+				}
+
+				ctx.save();
+				ctx.setTransform(scale, 0, 0, scale, 0, 0);
+				ctx.translate(midX, visualMidY);
+				ctx.rotate((angleDeg * Math.PI) / 180);
+				ctx.drawImage(
+					stageImg,
+					-lengthPx / 2,
+					-(STAGE_BASE_HEIGHT * scaleAlong) / 2,
+					lengthPx,
+					STAGE_BASE_HEIGHT * scaleAlong
+				);
 				ctx.restore();
 			}
 		}
