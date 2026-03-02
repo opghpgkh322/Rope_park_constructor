@@ -3250,6 +3250,62 @@ Email: ${email}
 			})));
 		}
 
+		function createTrackBaseSvgWithoutImages(sourceSvg) {
+			const clonedSvg = sourceSvg.cloneNode(true);
+			clonedSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			clonedSvg.querySelectorAll('image').forEach((node) => node.remove());
+			return clonedSvg;
+		}
+
+		function loadImageElement(src) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				img.onload = () => resolve(img);
+				img.onerror = () => reject(new Error(`Не удалось загрузить изображение: ${src}`));
+				img.src = src;
+			});
+		}
+
+		async function drawTrackSvgImagesToCanvas(ctx, sourceSvg, scale) {
+			const imageNodes = Array.from(sourceSvg.querySelectorAll('image'));
+			for (const imageNode of imageNodes) {
+				const href = imageNode.getAttribute('href') || imageNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href) continue;
+
+				const absoluteHref = /^(data:|blob:|https?:|file:)/i.test(href)
+					? href
+					: new URL(href, window.location.href).href;
+
+				let img;
+				try {
+					img = await loadImageElement(absoluteHref);
+				} catch (error) {
+					console.warn(error.message);
+					continue;
+				}
+
+				const matrix = imageNode.getCTM();
+				if (!matrix) continue;
+
+				const x = Number(imageNode.getAttribute('x') || 0);
+				const y = Number(imageNode.getAttribute('y') || 0);
+				const width = Number(imageNode.getAttribute('width') || img.naturalWidth || 1);
+				const height = Number(imageNode.getAttribute('height') || img.naturalHeight || 1);
+
+				ctx.save();
+				ctx.setTransform(
+					matrix.a * scale,
+					matrix.b * scale,
+					matrix.c * scale,
+					matrix.d * scale,
+					matrix.e * scale,
+					matrix.f * scale
+				);
+				ctx.drawImage(img, x, y, width, height);
+				ctx.restore();
+			}
+		}
+
 		// === ИСПРАВЛЕННАЯ КОНВЕРТАЦИЯ ===
 		async function svgToPngBlob() {
 			const svg = document.getElementById('trackVisualization');
@@ -3257,25 +3313,24 @@ Email: ${email}
 
 			try {
 				await preloadTrackImageAssets(svg);
+				const baseSvg = createTrackBaseSvgWithoutImages(svg);
+				normalizeSvgImageHrefs(svg);
+				normalizeSvgImageHrefs(baseSvg);
+				await inlineSvgImagesAsDataUris(baseSvg);
 
-				const clonedSvg = svg.cloneNode(true);
-				clonedSvg.querySelectorAll('foreignObject').forEach((node) => node.remove());
-				normalizeSvgImageHrefs(clonedSvg);
-				await inlineSvgImagesAsDataUris(clonedSvg);
-
-				const viewBox = clonedSvg.viewBox && clonedSvg.viewBox.baseVal
-					? clonedSvg.viewBox.baseVal
+				const viewBox = svg.viewBox && svg.viewBox.baseVal
+					? svg.viewBox.baseVal
 					: null;
 				let width = viewBox?.width || svg.clientWidth || 1200;
 				let height = viewBox?.height || svg.clientHeight || 600;
 				if (width < 400) width = 1200;
 				if (height < 300) height = 600;
 
-				clonedSvg.setAttribute('width', width);
-				clonedSvg.setAttribute('height', height);
+				baseSvg.setAttribute('width', width);
+				baseSvg.setAttribute('height', height);
 
 				const serializer = new XMLSerializer();
-				const svgString = serializer.serializeToString(clonedSvg);
+				const svgString = serializer.serializeToString(baseSvg);
 				const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
 				const svgUrl = URL.createObjectURL(svgBlob);
 
@@ -3296,14 +3351,20 @@ Email: ${email}
 						const ctx = canvas.getContext('2d');
 						ctx.fillStyle = 'white';
 						ctx.fillRect(0, 0, canvas.width, canvas.height);
-						
-						ctx.scale(scale, scale);
-						ctx.drawImage(img, 0, 0, width, height);
 
-						canvas.toBlob((blob) => {
-							resolve(blob);
-							URL.revokeObjectURL(svgUrl);
-						}, 'image/png', 0.95);
+						ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+						drawTrackSvgImagesToCanvas(ctx, svg, scale)
+							.then(() => {
+								canvas.toBlob((blob) => {
+									resolve(blob);
+									URL.revokeObjectURL(svgUrl);
+								}, 'image/png', 0.95);
+							})
+							.catch((error) => {
+								URL.revokeObjectURL(svgUrl);
+								reject(error);
+							});
 					};
 					
 					img.onerror = () => {
