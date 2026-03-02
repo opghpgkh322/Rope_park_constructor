@@ -2094,17 +2094,6 @@
 				}
 
 				if (schemaHref) {
-					const baseConnector = document.createElementNS("http://www.w3.org/2000/svg", "line");
-					baseConnector.setAttribute('data-stage-index', String(i));
-					baseConnector.setAttribute("x1", x1);
-					baseConnector.setAttribute("y1", y1 + SEGMENT_OFFSET_Y);
-					baseConnector.setAttribute("x2", x2);
-					baseConnector.setAttribute("y2", y2 + SEGMENT_OFFSET_Y);
-					baseConnector.setAttribute("stroke", "#4a4a4a");
-					baseConnector.setAttribute("stroke-width", "3");
-					baseConnector.setAttribute("stroke-linecap", "round");
-					svg.appendChild(baseConnector);
-
 					if (isDynamic) angleDeg = 0;
 					const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
 					group.setAttribute('data-stage-index', String(i));
@@ -2116,7 +2105,20 @@
 					img.setAttribute("x", -lengthPx/2); img.setAttribute("y", -STAGE_BASE_HEIGHT*scaleAlong/2);
 					img.setAttribute("width", lengthPx); img.setAttribute("height", STAGE_BASE_HEIGHT*scaleAlong);
 					img.setAttribute("preserveAspectRatio", "none");
-					img.setAttribute("opacity", "0.95");
+
+					img.onerror = () => {
+						if (group.parentNode) group.remove();
+						const fallbackLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+						fallbackLine.setAttribute('data-stage-index', String(i));
+						fallbackLine.setAttribute("x1", x1);
+						fallbackLine.setAttribute("y1", y1 + SEGMENT_OFFSET_Y);
+						fallbackLine.setAttribute("x2", x2);
+						fallbackLine.setAttribute("y2", y2 + SEGMENT_OFFSET_Y);
+						fallbackLine.setAttribute("stroke", "#333");
+						fallbackLine.setAttribute("stroke-width", "2");
+						fallbackLine.setAttribute("stroke-dasharray", "6,4");
+						svg.appendChild(fallbackLine);
+					};
 					group.appendChild(img); svg.appendChild(group);
 
 					if (safetyRopeActive && stageData?.schemaId && needsSafetyRope(stageData.schemaId)) {
