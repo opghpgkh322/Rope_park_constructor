@@ -3234,6 +3234,51 @@ Email: ${email}
 			}));
 		}
 
+		async function inlineStageSvgImagesAsVectors(svgElement) {
+			const imageNodes = Array.from(svgElement.querySelectorAll('image'));
+			for (const imgNode of imageNodes) {
+				const href = imgNode.getAttribute('href') || imgNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href || !/\.svg($|\?)/i.test(href)) continue;
+
+				const absoluteHref = new URL(href, window.location.href).href;
+				let svgText = '';
+				try {
+					const response = await fetch(absoluteHref, { cache: 'force-cache' });
+					if (!response.ok) continue;
+					svgText = await response.text();
+				} catch (error) {
+					continue;
+				}
+
+				const parsed = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+				const parsedSvg = parsed.documentElement;
+				if (!parsedSvg || parsedSvg.nodeName.toLowerCase() !== 'svg') continue;
+
+				const inlineSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+				inlineSvg.setAttribute('x', imgNode.getAttribute('x') || '0');
+				inlineSvg.setAttribute('y', imgNode.getAttribute('y') || '0');
+				inlineSvg.setAttribute('width', imgNode.getAttribute('width') || parsedSvg.getAttribute('width') || '1');
+				inlineSvg.setAttribute('height', imgNode.getAttribute('height') || parsedSvg.getAttribute('height') || '1');
+				inlineSvg.setAttribute('preserveAspectRatio', imgNode.getAttribute('preserveAspectRatio') || 'none');
+				if (imgNode.getAttribute('opacity')) inlineSvg.setAttribute('opacity', imgNode.getAttribute('opacity'));
+
+				const viewBox = parsedSvg.getAttribute('viewBox');
+				if (viewBox) {
+					inlineSvg.setAttribute('viewBox', viewBox);
+				} else {
+					const srcW = parsedSvg.getAttribute('width') || '800';
+					const srcH = parsedSvg.getAttribute('height') || '600';
+					inlineSvg.setAttribute('viewBox', `0 0 ${srcW} ${srcH}`);
+				}
+
+				Array.from(parsedSvg.childNodes).forEach((child) => {
+					inlineSvg.appendChild(document.importNode(child, true));
+				});
+
+				imgNode.replaceWith(inlineSvg);
+			}
+		}
+
 		// === ИСПРАВЛЕННАЯ КОНВЕРТАЦИЯ ===
 		async function svgToPngBlob() {
 			const svg = document.getElementById('trackVisualization');
@@ -3243,6 +3288,7 @@ Email: ${email}
 				const clonedSvg = svg.cloneNode(true);
 				clonedSvg.querySelectorAll('foreignObject').forEach((node) => node.remove());
 				normalizeSvgImageHrefs(clonedSvg);
+				await inlineStageSvgImagesAsVectors(clonedSvg);
 				await inlineSvgImagesAsDataUris(clonedSvg);
 
 				const viewBox = clonedSvg.viewBox && clonedSvg.viewBox.baseVal
