@@ -3330,10 +3330,9 @@ Email: ${email}
 			const totalCost = Number(state.breakdown?.totalCost || 0).toLocaleString('ru-RU');
 			const imageList = Array.isArray(trackImageDataUrl) ? trackImageDataUrl : [trackImageDataUrl].filter(Boolean);
 			const trackImageBlock = imageList.length
-				? imageList.map((src, index) => `
+				? imageList.map((src) => `
 					<div style="margin-bottom: 14px;">
-						<div style="font-size:12px; color:#5d7270; margin-bottom:6px;">Сегмент схемы ${index + 1}</div>
-						<img src="${src}" alt="Схема трассы ${index + 1}" style="width: 100%; border: 1px solid #dce9e6; border-radius: 8px;">
+						<img src="${src}" alt="Схема трассы" style="width: 100%; border: 1px solid #dce9e6; border-radius: 8px;">
 					</div>
 				`).join('')
 				: '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
@@ -3408,98 +3407,10 @@ th { background:#f4fbf9; }
 </html>`;
 		}
 
-		async function svgElementToPngDataUrl(svgElement, scale = 2) {
-			const clonedSvg = svgElement.cloneNode(true);
-			normalizeSvgImageHrefs(clonedSvg);
-			await inlineSvgImagesAsDataUris(clonedSvg);
-
-			const serializer = new XMLSerializer();
-			const svgString = serializer.serializeToString(clonedSvg);
-			const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-			const svgUrl = URL.createObjectURL(svgBlob);
-
-			try {
-				return await new Promise((resolve, reject) => {
-					const img = new Image();
-					img.onload = () => {
-						const width = Number(clonedSvg.getAttribute('width')) || clonedSvg.viewBox.baseVal.width;
-						const height = Number(clonedSvg.getAttribute('height')) || clonedSvg.viewBox.baseVal.height;
-						const canvas = document.createElement('canvas');
-						canvas.width = width * scale;
-						canvas.height = height * scale;
-						const ctx = canvas.getContext('2d');
-						ctx.fillStyle = '#ffffff';
-						ctx.fillRect(0, 0, canvas.width, canvas.height);
-						ctx.scale(scale, scale);
-						ctx.drawImage(img, 0, 0, width, height);
-						resolve(canvas.toDataURL('image/png', 0.95));
-					};
-					img.onerror = () => reject(new Error('Ошибка подготовки сегмента схемы'));
-					img.src = svgUrl;
-				});
-			} finally {
-				URL.revokeObjectURL(svgUrl);
-			}
-		}
-
-		async function buildTrackRowsForPdf() {
-			const sourceSvg = document.getElementById('trackVisualization');
-			if (!sourceSvg) return [];
-
-			const viewBox = sourceSvg.viewBox?.baseVal;
-			const fullWidth = viewBox?.width || Number(sourceSvg.getAttribute('width')) || 0;
-			const fullHeight = viewBox?.height || Number(sourceSvg.getAttribute('height')) || 640;
-			if (!fullWidth) return [];
-
-			const cleanSvg = sourceSvg.cloneNode(true);
-			cleanSvg.removeAttribute('id');
-			cleanSvg.style.pointerEvents = 'none';
-			cleanSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
-			normalizeSvgImageHrefs(cleanSvg);
-
-			const stagePixelWidth = 320;
-			const leftPadding = 220;
-			const rightPadding = 100;
-			const stagesPerRow = 5;
-			const totalStages = Math.max(0, state.platformCount - 1);
-
-			const rows = [];
-			if (totalStages <= 0) {
-				rows.push({ startStage: 0, endStageExclusive: 0 });
-			} else {
-				for (let startStage = 0; startStage < totalStages; startStage += stagesPerRow) {
-					rows.push({
-						startStage,
-						endStageExclusive: Math.min(totalStages, startStage + stagesPerRow)
-					});
-				}
-			}
-
-			const result = [];
-			for (const rowInfo of rows) {
-				const { startStage, endStageExclusive } = rowInfo;
-				const stagesInRow = Math.max(1, endStageExclusive - startStage);
-				const rowStart = startStage * stagePixelWidth;
-				const rowEnd = rowStart + leftPadding + stagesInRow * stagePixelWidth + rightPadding;
-				const width = Math.max(1, rowEnd - rowStart);
-
-				const rowSvg = cleanSvg.cloneNode(true);
-				rowSvg.setAttribute('viewBox', `${rowStart} 0 ${width} ${fullHeight}`);
-				rowSvg.setAttribute('width', width);
-				rowSvg.setAttribute('height', fullHeight);
-				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
-
-				rowSvg.querySelectorAll('[data-stage-index]').forEach((node) => {
-					const stageIndex = Number(node.getAttribute('data-stage-index'));
-					if (Number.isNaN(stageIndex)) return;
-					if (stageIndex < startStage || stageIndex >= endStageExclusive) node.remove();
-				});
-
-				const rowImage = await svgElementToPngDataUrl(rowSvg, 2);
-				result.push(rowImage);
-			}
-
-			return result;
+		async function getExactTrackImageDataUrl() {
+			const schemaBlob = await svgToPngBlob();
+			if (!schemaBlob) return '';
+			return blobToDataUrl(schemaBlob);
 		}
 
 		async function downloadPdfReport() {
@@ -3519,15 +3430,11 @@ th { background:#f4fbf9; }
 
 				let trackImageDataUrl = [];
 				try {
-					trackImageDataUrl = await Promise.race([
-						buildTrackRowsForPdf(),
-						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 8000))
+					const dataUrl = await Promise.race([
+						getExactTrackImageDataUrl(),
+						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 12000))
 					]);
-
-					if (!trackImageDataUrl.length) {
-						const schemaBlob = await svgToPngBlob();
-						if (schemaBlob) trackImageDataUrl = [await blobToDataUrl(schemaBlob)];
-					}
+					if (dataUrl) trackImageDataUrl = [dataUrl];
 				} catch (error) {
 					console.warn('Не удалось встроить схему в PDF:', error);
 				}
