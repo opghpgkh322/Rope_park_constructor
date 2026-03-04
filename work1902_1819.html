@@ -978,9 +978,9 @@
 
             <div class="button-group">
                 <button class="btn-secondary" onclick="goToStep(4)">Вернуться к проектированию</button>
-                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="downloadPdfReport()">
+                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="saveCalculationReport()">
                     <span>📄</span>
-                    <span>Скачать PDF-отчет</span>
+                    <span>Сохранить расчет</span>
                 </button>
                 <button class="btn-primary" id="submitBtn" onclick="submitRequest()">Отправить заявку</button>
             </div>
@@ -3540,7 +3540,7 @@ Email: ${email}
 				.replace(/'/g, '&#39;');
 		}
 
-		function buildPdfReportHtml(trackImageDataUrl = '') {
+		function buildSavedReportHtml(trackImageDataUrl = '') {
 			const logoSrc = document.querySelector('#costSummary .logo img')?.src || '';
 			const firstName = document.getElementById('firstName')?.value.trim() || '-';
 			const lastName = document.getElementById('lastName')?.value.trim() || '-';
@@ -3572,7 +3572,7 @@ Email: ${email}
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>PDF отчет — Space Concept</title>
+<title>Расчет трассы — Space Concept</title>
 <style>
 body { font-family: Arial, sans-serif; margin: 28px; color:#243330; }
 .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1abc9c; padding-bottom:10px; }
@@ -3593,7 +3593,7 @@ th { background:#f4fbf9; }
 <body>
 <div class="header">
   <img class="logo" src="${logoSrc}" alt="Space Concept">
-  <div class="badge">PDF ОТЧЕТ</div>
+  <div class="badge">РАСЧЕТ</div>
 </div>
 
 <h1>Коммерческий расчет трассы веревочного парка</h1>
@@ -3700,7 +3700,20 @@ th { background:#f4fbf9; }
 			}
 		}
 
-		async function downloadPdfReport() {
+        function downloadReportHtmlFile(reportHtml) {
+			const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const timestamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `space-concept-raschet-${timestamp}.html`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		}
+
+		async function saveCalculationReport() {
 			if (!state.breakdown) {
 				alert('Сначала рассчитайте стоимость трассы.');
 				return;
@@ -3709,7 +3722,7 @@ th { background:#f4fbf9; }
 			const btn = document.getElementById('downloadPdfBtn');
 			if (btn) {
 				btn.disabled = true;
-				btn.textContent = 'Подготовка PDF...';
+				btn.textContent = 'Подготовка файла...';
 			}
 
 			try {
@@ -3720,33 +3733,24 @@ th { background:#f4fbf9; }
 					const assets = await withTimeout(
 						buildTrackExportAssets(),
 						45000,
-						'Превышено время подготовки схемы для PDF'
+						'Превышено время подготовки схемы для отчета'
 					);
 					if (assets?.jpgDataUrl || assets?.pngDataUrl) {
 						trackImageDataUrl = [assets.jpgDataUrl || assets.pngDataUrl];
 					}
 				} catch (error) {
-					console.warn('Не удалось встроить схему в PDF:', error);
+					console.warn('Не удалось встроить схему в файл отчета:', error);
 				}
 
-				const reportWindow = window.open('', '_blank');
-				if (!reportWindow) {
-					alert('Браузер заблокировал всплывающее окно. Разрешите pop-up для экспорта PDF.');
-					return;
-				}
-
-				reportWindow.document.open();
-				reportWindow.document.write(buildPdfReportHtml(trackImageDataUrl));
-				reportWindow.document.close();
-				reportWindow.focus();
-				setTimeout(() => reportWindow.print(), 500);
+				const reportHtml = buildSavedReportHtml(trackImageDataUrl);
+				downloadReportHtmlFile(reportHtml);
 			} catch (error) {
-				console.error('Ошибка формирования PDF:', error);
-				alert('Не удалось сформировать PDF-отчет. Попробуйте еще раз.');
+				console.error('Ошибка формирования файла расчета:', error);
+				alert('Не удалось сохранить расчет. Попробуйте еще раз.');
 			} finally {
 				if (btn) {
 					btn.disabled = false;
-					btn.innerHTML = '<span>📄</span><span>Скачать PDF-отчет</span>';
+					btn.innerHTML = '<span>📄</span><span>Сохранить расчет</span>';
 				}
 			}
 		}
