@@ -3253,6 +3253,69 @@ Email: ${email}
 			});
 		}
 
+		async function ensureHtml2CanvasLoaded() {
+			if (window.html2canvas) return window.html2canvas;
+			await new Promise((resolve, reject) => {
+				const script = document.createElement('script');
+				script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+				script.async = true;
+				script.onload = resolve;
+				script.onerror = () => reject(new Error('Не удалось загрузить html2canvas'));
+				document.head.appendChild(script);
+			});
+			if (!window.html2canvas) throw new Error('html2canvas не инициализирован');
+			return window.html2canvas;
+		}
+
+		async function captureTrackScreenshotBlob() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			if (!sourceSvg) return null;
+
+			const viewBox = sourceSvg.viewBox && sourceSvg.viewBox.baseVal ? sourceSvg.viewBox.baseVal : null;
+			const width = Math.max(1, Math.round(viewBox?.width || Number(sourceSvg.getAttribute('width')) || sourceSvg.clientWidth || 1200));
+			const height = Math.max(1, Math.round(viewBox?.height || Number(sourceSvg.getAttribute('height')) || sourceSvg.clientHeight || 640));
+
+			const clone = sourceSvg.cloneNode(true);
+			clone.removeAttribute('id');
+			clone.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			clone.setAttribute('width', String(width));
+			clone.setAttribute('height', String(height));
+			clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+			const host = document.createElement('div');
+			host.style.position = 'fixed';
+			host.style.left = '-100000px';
+			host.style.top = '0';
+			host.style.width = `${width}px`;
+			host.style.height = `${height}px`;
+			host.style.background = '#ffffff';
+			host.style.overflow = 'hidden';
+			host.appendChild(clone);
+			document.body.appendChild(host);
+
+			try {
+				const html2canvas = await ensureHtml2CanvasLoaded();
+				await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+				const canvas = await html2canvas(host, {
+					backgroundColor: '#ffffff',
+					scale: 2,
+					useCORS: true,
+					allowTaint: true,
+					logging: false,
+					width,
+					height
+				});
+				return await new Promise((resolve, reject) => {
+					canvas.toBlob((blob) => {
+						if (!blob) return reject(new Error('Скриншот схемы не сформирован'));
+						resolve(blob);
+					}, 'image/png', 0.95);
+				});
+			} finally {
+				host.remove();
+			}
+		}
+
 		async function drawTrackSvgImagesToCanvas(ctx, sourceSvg, scale) {
 			const imageNodes = Array.from(sourceSvg.querySelectorAll('image'));
 			const stageSchemaFiles = new Set(Object.values(STAGE_SCHEMAS || {}));
@@ -3396,6 +3459,13 @@ Email: ${email}
 			if (!svg) return null;
 
 			try {
+				try {
+					const screenshotBlob = await captureTrackScreenshotBlob();
+					if (screenshotBlob) return screenshotBlob;
+				} catch (screenshotError) {
+					console.warn('Скриншотный экспорт не удался, переключаемся на резервный режим:', screenshotError);
+				}
+
 				await preloadTrackImageAssets(svg);
 				const viewBox = svg.viewBox && svg.viewBox.baseVal
 					? svg.viewBox.baseVal
