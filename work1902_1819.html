@@ -2082,10 +2082,13 @@
 				let schemaHref = null;
 				let stageName = null;
 				let isDynamic = false;
-				let stageData = null;
+				let stageData = state.stages?.[i] || null;
 
-				if (selectElement && selectElement.value) {
+				if (!stageData && selectElement && selectElement.value) {
 					stageData = JSON.parse(selectElement.value);
+				}
+
+				if (stageData) {
 					stageName = stageData.name;
 					if (stageData.schemaId && STAGE_SCHEMAS[stageData.schemaId]) {
 						schemaHref = STAGE_SCHEMAS[stageData.schemaId];
