@@ -3540,7 +3540,28 @@ Email: ${email}
 				.replace(/'/g, '&#39;');
 		}
 
-		function buildSavedReportHtml(trackImageDataUrl = '') {
+		async function buildEmbeddedTrackSvgMarkup() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			if (!sourceSvg) return '';
+
+			const viewBox = sourceSvg.viewBox && sourceSvg.viewBox.baseVal ? sourceSvg.viewBox.baseVal : null;
+			const width = Math.max(1, Math.round(viewBox?.width || Number(sourceSvg.getAttribute('width')) || sourceSvg.clientWidth || 1200));
+			const height = Math.max(1, Math.round(viewBox?.height || Number(sourceSvg.getAttribute('height')) || sourceSvg.clientHeight || 640));
+
+			const clone = sourceSvg.cloneNode(true);
+			clone.removeAttribute('id');
+			clone.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			clone.setAttribute('width', String(width));
+			clone.setAttribute('height', String(height));
+			clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+			clone.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+			normalizeSvgImageHrefs(clone);
+			await inlineSvgImagesAsDataUris(clone);
+
+			return `<div style="margin-bottom:14px; border:1px solid #dce9e6; border-radius:8px; overflow:auto; background:#fff;">${clone.outerHTML}</div>`;
+		}
+
+		function buildSavedReportHtml(trackContentHtml = '') {
 			const logoSrc = document.querySelector('#costSummary .logo img')?.src || '';
 			const firstName = document.getElementById('firstName')?.value.trim() || '-';
 			const lastName = document.getElementById('lastName')?.value.trim() || '-';
@@ -3559,14 +3580,7 @@ Email: ${email}
 			`).join('');
 
 			const totalCost = Number(state.breakdown?.totalCost || 0).toLocaleString('ru-RU');
-			const imageList = Array.isArray(trackImageDataUrl) ? trackImageDataUrl : [trackImageDataUrl].filter(Boolean);
-			const trackImageBlock = imageList.length
-				? imageList.map((src) => `
-					<div style="margin-bottom: 14px;">
-						<img src="${src}" alt="Схема трассы" style="width: 100%; border: 1px solid #dce9e6; border-radius: 8px;">
-					</div>
-				`).join('')
-				: '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
+			const trackImageBlock = trackContentHtml || '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
 
 			return `<!doctype html>
 <html lang="ru">
@@ -3728,21 +3742,31 @@ th { background:#f4fbf9; }
 			try {
 				updateVisualization();
 
-				let trackImageDataUrl = [];
+				let trackContentHtml = '';
 				try {
+					const embeddedSvg = await withTimeout(
+						buildEmbeddedTrackSvgMarkup(),
+						30000,
+						'Превышено время подготовки SVG-схемы для отчета'
+					);
+					if (embeddedSvg) trackContentHtml = embeddedSvg;
+
+					if (!trackContentHtml) {
 					const assets = await withTimeout(
 						buildTrackExportAssets(),
 						45000,
 						'Превышено время подготовки схемы для отчета'
 					);
-					if (assets?.jpgDataUrl || assets?.pngDataUrl) {
-						trackImageDataUrl = [assets.jpgDataUrl || assets.pngDataUrl];
+						if (assets?.jpgDataUrl || assets?.pngDataUrl) {
+							const src = assets.jpgDataUrl || assets.pngDataUrl;
+							trackContentHtml = `<div style="margin-bottom:14px;"><img src="${src}" alt="Схема трассы" style="width:100%; border:1px solid #dce9e6; border-radius:8px;"></div>`;
+						}
 					}
 				} catch (error) {
 					console.warn('Не удалось встроить схему в файл отчета:', error);
 				}
 
-				const reportHtml = buildSavedReportHtml(trackImageDataUrl);
+				const reportHtml = buildSavedReportHtml(trackContentHtml);
 				downloadReportHtmlFile(reportHtml);
 			} catch (error) {
 				console.error('Ошибка формирования файла расчета:', error);
