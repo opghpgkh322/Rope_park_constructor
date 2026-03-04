@@ -3555,6 +3555,50 @@ Email: ${email}
 			clone.setAttribute('height', String(height));
 			clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
 			clone.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = height - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const scale = ((height - topPadding - bottomPadding) / (maxHeight + 50));
+			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
+
+			clone.querySelectorAll('[data-summary-labels="true"]').forEach((node) => node.remove());
+			const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			labelsGroup.setAttribute('data-summary-labels', 'true');
+
+			for (let i = 0; i < state.platformCount; i++) {
+				const x = leftPadding + i * stagePixelWidth;
+				const platformY = groundY - state.heights[i] * scale - 20;
+				const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				heightText.setAttribute('x', x);
+				heightText.setAttribute('y', platformY - 142);
+				heightText.setAttribute('text-anchor', 'middle');
+				heightText.setAttribute('font-size', '12');
+				heightText.setAttribute('font-weight', '600');
+				heightText.setAttribute('fill', '#1f1f1f');
+				heightText.textContent = formatMeters(state.heights[i]);
+				labelsGroup.appendChild(heightText);
+			}
+
+			for (let i = 0; i < state.platformCount - 1; i++) {
+				const x1 = leftPadding + i * stagePixelWidth;
+				const x2 = leftPadding + (i + 1) * stagePixelWidth;
+				const midX = (x1 + x2) / 2;
+				const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				distText.setAttribute('x', midX);
+				distText.setAttribute('y', groundY + 42);
+				distText.setAttribute('text-anchor', 'middle');
+				distText.setAttribute('font-size', '12');
+				distText.setAttribute('font-weight', '600');
+				distText.setAttribute('fill', '#1f1f1f');
+				distText.textContent = formatMeters(state.distances[i]);
+				labelsGroup.appendChild(distText);
+			}
+
+			clone.appendChild(labelsGroup);
 			normalizeSvgImageHrefs(clone);
 			await inlineSvgImagesAsDataUris(clone);
 
@@ -3652,6 +3696,35 @@ th { background:#f4fbf9; }
 </html>`;
 		}
 
+		async function buildTrackContentForReport() {
+			try {
+				const embeddedSvg = await withTimeout(
+					buildEmbeddedTrackSvgMarkup(),
+					30000,
+					'Превышено время подготовки SVG-схемы для отчета'
+				);
+				if (embeddedSvg) return embeddedSvg;
+			} catch (error) {
+				console.warn('Не удалось встроить SVG-схему в отчет:', error);
+			}
+
+			try {
+				const assets = await withTimeout(
+					buildTrackExportAssets(),
+					45000,
+					'Превышено время подготовки схемы для отчета'
+				);
+				if (assets?.jpgDataUrl || assets?.pngDataUrl) {
+					const src = assets.jpgDataUrl || assets.pngDataUrl;
+					return `<div style="margin-bottom:14px;"><img src="${src}" alt="Схема трассы" style="width:100%; border:1px solid #dce9e6; border-radius:8px;"></div>`;
+				}
+			} catch (error) {
+				console.warn('Не удалось встроить растр-схему в отчет:', error);
+			}
+
+			return '';
+		}
+
 		async function convertImageBlobToJpegBlob(sourceBlob, quality = 0.95) {
 			return new Promise((resolve, reject) => {
 				const img = new Image();
@@ -3742,29 +3815,7 @@ th { background:#f4fbf9; }
 			try {
 				updateVisualization();
 
-				let trackContentHtml = '';
-				try {
-					const embeddedSvg = await withTimeout(
-						buildEmbeddedTrackSvgMarkup(),
-						30000,
-						'Превышено время подготовки SVG-схемы для отчета'
-					);
-					if (embeddedSvg) trackContentHtml = embeddedSvg;
-
-					if (!trackContentHtml) {
-					const assets = await withTimeout(
-						buildTrackExportAssets(),
-						45000,
-						'Превышено время подготовки схемы для отчета'
-					);
-						if (assets?.jpgDataUrl || assets?.pngDataUrl) {
-							const src = assets.jpgDataUrl || assets.pngDataUrl;
-							trackContentHtml = `<div style="margin-bottom:14px;"><img src="${src}" alt="Схема трассы" style="width:100%; border:1px solid #dce9e6; border-radius:8px;"></div>`;
-						}
-					}
-				} catch (error) {
-					console.warn('Не удалось встроить схему в файл отчета:', error);
-				}
+				const trackContentHtml = await buildTrackContentForReport();
 
 				const reportHtml = buildSavedReportHtml(trackContentHtml);
 				downloadReportHtmlFile(reportHtml);
@@ -3837,34 +3888,23 @@ th { background:#f4fbf9; }
 			try {
 				updateVisualization();
 
-				let exportAssets = null;
-				try {
-					exportAssets = await withTimeout(
-						buildTrackExportAssets(),
-						30000,
-						'Превышено время подготовки схемы для Telegram'
-					);
-				} catch (error) {
-					console.warn('Не удалось подготовить схему:', error);
-				}
+				const trackContentHtml = await buildTrackContentForReport();
+				const reportHtml = buildSavedReportHtml(trackContentHtml);
+				const reportBlob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
 
-				if (exportAssets?.jpgBlob || exportAssets?.pngBlob) {
+				if (reportBlob) {
 					const formData = new FormData();
 					formData.append('chat_id', CHAT_ID);
-					if (exportAssets.jpgBlob) {
-						formData.append('photo', exportAssets.jpgBlob, 'rope-park-schema.jpg');
-					} else {
-						formData.append('photo', exportAssets.pngBlob, 'rope-park-schema.png');
-					}
+					formData.append('document', reportBlob, 'rope-park-raschet.html');
 					const caption = `📋 *НОВАЯ ЗАЯВКА НА ВЕРЕВОЧНЫЙ ПАРК*\n\n` +
 						`👤 *Имя:* ${firstName} ${lastName}\n` +
 						`📱 *Телефон:* ${phone}\n` +
 						`📧 *Email:* ${email}\n\n` +
-						`⬇️ *Детализация проекта в следующем сообщении*`;
+						`⬇️ *Файл с полной схемой и сметой прикреплен*`;
 					formData.append('caption', caption);
 					formData.append('parse_mode', 'Markdown');
 
-					await telegramRequest(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+					await telegramRequest(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
 						method: 'POST',
 						body: formData
 					}, 15000);
