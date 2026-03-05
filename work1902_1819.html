@@ -978,9 +978,9 @@
 
             <div class="button-group">
                 <button class="btn-secondary" onclick="goToStep(4)">Вернуться к проектированию</button>
-                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="downloadPdfReport()">
+                <button class="btn-primary btn-pdf" id="downloadPdfBtn" onclick="saveCalculationReport()">
                     <span>📄</span>
-                    <span>Скачать PDF-отчет</span>
+                    <span>Сохранить расчет</span>
                 </button>
                 <button class="btn-primary" id="submitBtn" onclick="submitRequest()">Отправить заявку</button>
             </div>
@@ -2082,10 +2082,13 @@
 				let schemaHref = null;
 				let stageName = null;
 				let isDynamic = false;
-				let stageData = null;
+				let stageData = state.stages?.[i] || null;
 
-				if (selectElement && selectElement.value) {
+				if (!stageData && selectElement && selectElement.value) {
 					stageData = JSON.parse(selectElement.value);
+				}
+
+				if (stageData) {
 					stageName = stageData.name;
 					if (stageData.schemaId && STAGE_SCHEMAS[stageData.schemaId]) {
 						schemaHref = STAGE_SCHEMAS[stageData.schemaId];
@@ -2105,6 +2108,7 @@
 					img.setAttribute("x", -lengthPx/2); img.setAttribute("y", -STAGE_BASE_HEIGHT*scaleAlong/2);
 					img.setAttribute("width", lengthPx); img.setAttribute("height", STAGE_BASE_HEIGHT*scaleAlong);
 					img.setAttribute("preserveAspectRatio", "none");
+
 					group.appendChild(img); svg.appendChild(group);
 
 					if (safetyRopeActive && stageData?.schemaId && needsSafetyRope(stageData.schemaId)) {
@@ -3155,71 +3159,363 @@ Email: ${email}
             });
         }
 		
+		async function blobToDataUrl(blob) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onloadend = () => resolve(reader.result);
+				reader.onerror = reject;
+				reader.readAsDataURL(blob);
+			});
+		}
+
+		async function imageUrlToDataUrlViaCanvas(url, fallbackWidth = 1600, fallbackHeight = 900) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				img.onload = () => {
+					try {
+						const width = Math.max(1, img.naturalWidth || fallbackWidth || 1);
+						const height = Math.max(1, img.naturalHeight || fallbackHeight || 1);
+						const canvas = document.createElement('canvas');
+						canvas.width = width;
+						canvas.height = height;
+						const ctx = canvas.getContext('2d');
+						ctx.drawImage(img, 0, 0, width, height);
+						resolve(canvas.toDataURL('image/png', 1));
+					} catch (err) {
+						reject(err);
+					}
+				};
+				img.onerror = () => reject(new Error('Не удалось загрузить изображение: ' + url));
+				img.src = url;
+			});
+		}
+
+		async function inlineSvgImagesAsDataUris(svgElement) {
+			const imageNodes = Array.from(svgElement.querySelectorAll('image'));
+			await Promise.all(imageNodes.map(async (imgNode) => {
+				const href = imgNode.getAttribute('href') || imgNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href || /^(data:|blob:)/i.test(href)) return;
+
+				const absoluteHref = new URL(href, window.location.href).href;
+				let dataUrl = null;
+				try {
+					const response = await fetch(absoluteHref, { cache: 'force-cache' });
+					if (response.ok) {
+						const blob = await response.blob();
+						dataUrl = await blobToDataUrl(blob);
+					}
+				} catch (error) {
+					// fetch может падать при file:// URL — ниже fallback через <img> + canvas.
+				}
+
+				if (!dataUrl) {
+					try {
+						const fallbackWidth = Number(imgNode.getAttribute('width')) || 1600;
+						const fallbackHeight = Number(imgNode.getAttribute('height')) || 900;
+						dataUrl = await imageUrlToDataUrlViaCanvas(absoluteHref, fallbackWidth, fallbackHeight);
+					} catch (error) {
+						console.warn('Не удалось встроить изображение в SVG:', absoluteHref, error);
+						return;
+					}
+				}
+
+				imgNode.setAttribute('href', dataUrl);
+				imgNode.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+			}));
+		}
+
+		async function preloadTrackImageAssets(svgElement) {
+			const hrefs = new Set();
+			svgElement.querySelectorAll('image').forEach((imgNode) => {
+				const href = imgNode.getAttribute('href') || imgNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href || /^(data:|blob:)/i.test(href)) return;
+				hrefs.add(new URL(href, window.location.href).href);
+			});
+
+			await Promise.all(Array.from(hrefs).map((src) => new Promise((resolve) => {
+				const img = new Image();
+				img.onload = () => resolve();
+				img.onerror = () => resolve();
+				img.src = src;
+			})));
+		}
+
+		function createTrackBaseSvgWithoutImages(sourceSvg) {
+			const clonedSvg = sourceSvg.cloneNode(true);
+			clonedSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			clonedSvg.querySelectorAll('image').forEach((node) => node.remove());
+			return clonedSvg;
+		}
+
+		function loadImageElement(src) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				img.onload = () => resolve(img);
+				img.onerror = () => reject(new Error(`Не удалось загрузить изображение: ${src}`));
+				img.src = src;
+			});
+		}
+
+		async function ensureHtml2CanvasLoaded() {
+			if (window.html2canvas) return window.html2canvas;
+			await new Promise((resolve, reject) => {
+				const script = document.createElement('script');
+				script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+				script.async = true;
+				script.onload = resolve;
+				script.onerror = () => reject(new Error('Не удалось загрузить html2canvas'));
+				document.head.appendChild(script);
+			});
+			if (!window.html2canvas) throw new Error('html2canvas не инициализирован');
+			return window.html2canvas;
+		}
+
+		async function captureTrackScreenshotBlob() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			if (!sourceSvg) return null;
+
+			const viewBox = sourceSvg.viewBox && sourceSvg.viewBox.baseVal ? sourceSvg.viewBox.baseVal : null;
+			const width = Math.max(1, Math.round(viewBox?.width || Number(sourceSvg.getAttribute('width')) || sourceSvg.clientWidth || 1200));
+			const height = Math.max(1, Math.round(viewBox?.height || Number(sourceSvg.getAttribute('height')) || sourceSvg.clientHeight || 640));
+
+			const clone = sourceSvg.cloneNode(true);
+			clone.removeAttribute('id');
+			clone.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			clone.setAttribute('width', String(width));
+			clone.setAttribute('height', String(height));
+			clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+			const host = document.createElement('div');
+			host.style.position = 'fixed';
+			host.style.left = '-100000px';
+			host.style.top = '0';
+			host.style.width = `${width}px`;
+			host.style.height = `${height}px`;
+			host.style.background = '#ffffff';
+			host.style.overflow = 'hidden';
+			host.appendChild(clone);
+			document.body.appendChild(host);
+
+			try {
+				const html2canvas = await ensureHtml2CanvasLoaded();
+				await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+				const canvas = await html2canvas(host, {
+					backgroundColor: '#ffffff',
+					scale: 2,
+					useCORS: true,
+					allowTaint: true,
+					logging: false,
+					width,
+					height
+				});
+				return await new Promise((resolve, reject) => {
+					canvas.toBlob((blob) => {
+						if (!blob) return reject(new Error('Скриншот схемы не сформирован'));
+						resolve(blob);
+					}, 'image/png', 0.95);
+				});
+			} finally {
+				host.remove();
+			}
+		}
+
+		async function drawTrackSvgImagesToCanvas(ctx, sourceSvg, scale) {
+			const imageNodes = Array.from(sourceSvg.querySelectorAll('image'));
+			const stageSchemaFiles = new Set(Object.values(STAGE_SCHEMAS || {}));
+			for (const imageNode of imageNodes) {
+				const href = imageNode.getAttribute('href') || imageNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href) continue;
+				const normalizedHref = href.split('?')[0];
+				const isStageSchema = Array.from(stageSchemaFiles).some((file) => normalizedHref === file || normalizedHref.endsWith('/' + file));
+				if (isStageSchema) continue;
+
+				const absoluteHref = /^(data:|blob:|https?:|file:)/i.test(href)
+					? href
+					: new URL(href, window.location.href).href;
+
+				let img;
+				try {
+					img = await loadImageElement(absoluteHref);
+				} catch (error) {
+					console.warn(error.message);
+					continue;
+				}
+
+				const matrix = imageNode.getCTM();
+				if (!matrix) continue;
+
+				const x = Number(imageNode.getAttribute('x') || 0);
+				const y = Number(imageNode.getAttribute('y') || 0);
+				const width = Number(imageNode.getAttribute('width') || img.naturalWidth || 1);
+				const height = Number(imageNode.getAttribute('height') || img.naturalHeight || 1);
+
+				ctx.save();
+				ctx.setTransform(
+					matrix.a * scale,
+					matrix.b * scale,
+					matrix.c * scale,
+					matrix.d * scale,
+					matrix.e * scale,
+					matrix.f * scale
+				);
+				ctx.drawImage(img, x, y, width, height);
+				ctx.restore();
+			}
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const height = (sourceSvg.viewBox && sourceSvg.viewBox.baseVal?.height) || Number(sourceSvg.getAttribute('height')) || 640;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = height - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const heightScale = ((height - topPadding - bottomPadding) / (maxHeight + 50));
+			const STAGE_BASE_WIDTH = 800;
+			const STAGE_BASE_HEIGHT = 520;
+			const SEGMENT_OFFSET_Y = -20;
+
+			for (let i = 0; i < state.platformCount - 1; i++) {
+				const stageData = state.stages?.[i];
+				if (!stageData?.schemaId || !STAGE_SCHEMAS[stageData.schemaId]) continue;
+
+				const x1 = leftPadding + i * stagePixelWidth;
+				const x2 = leftPadding + (i + 1) * stagePixelWidth;
+				const y1 = groundY - state.heights[i] * heightScale - 20 + 15;
+				const y2 = groundY - state.heights[i + 1] * heightScale - 20 + 15;
+				const dx = x2 - x1;
+				const dy = y2 - y1;
+				const lengthPx = Math.hypot(dx, dy);
+				const midX = (x1 + x2) / 2;
+				const midY = (y1 + y2) / 2;
+				const visualMidY = midY + SEGMENT_OFFSET_Y;
+				const scaleAlong = lengthPx / STAGE_BASE_WIDTH;
+				const angleDeg = isDynamicStage(stageData.schemaId) ? 0 : (Math.atan2(dy, dx) * 180 / Math.PI);
+
+				const stageSrc = new URL(STAGE_SCHEMAS[stageData.schemaId], window.location.href).href;
+				let stageImg;
+				try {
+					stageImg = await loadImageElement(stageSrc);
+				} catch {
+					continue;
+				}
+
+				ctx.save();
+				ctx.setTransform(scale, 0, 0, scale, 0, 0);
+				ctx.translate(midX, visualMidY);
+				ctx.rotate((angleDeg * Math.PI) / 180);
+				ctx.drawImage(
+					stageImg,
+					-lengthPx / 2,
+					-(STAGE_BASE_HEIGHT * scaleAlong) / 2,
+					lengthPx,
+					STAGE_BASE_HEIGHT * scaleAlong
+				);
+				ctx.restore();
+			}
+		}
+
+		async function renderSvgElementToPngBlob(svgElement, width, height, scale = 2) {
+			const serializer = new XMLSerializer();
+			const svgString = serializer.serializeToString(svgElement);
+			const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+			const svgUrl = URL.createObjectURL(svgBlob);
+
+			return await new Promise((resolve, reject) => {
+				const img = new Image();
+				const timeoutId = setTimeout(() => {
+					URL.revokeObjectURL(svgUrl);
+					reject(new Error('Таймаут при обработке схемы'));
+				}, 10000);
+
+				img.onload = () => {
+					clearTimeout(timeoutId);
+					const canvas = document.createElement('canvas');
+					canvas.width = width * scale;
+					canvas.height = height * scale;
+					const ctx = canvas.getContext('2d');
+					ctx.fillStyle = 'white';
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+					canvas.toBlob((blob) => {
+						URL.revokeObjectURL(svgUrl);
+						if (!blob) {
+							reject(new Error('Canvas не смог сформировать PNG'));
+							return;
+						}
+						resolve(blob);
+					}, 'image/png', 0.95);
+				};
+
+				img.onerror = () => {
+					clearTimeout(timeoutId);
+					URL.revokeObjectURL(svgUrl);
+					reject(new Error('Ошибка конвертации схемы'));
+				};
+
+				img.src = svgUrl;
+			});
+		}
+
 		// === ИСПРАВЛЕННАЯ КОНВЕРТАЦИЯ ===
 		async function svgToPngBlob() {
 			const svg = document.getElementById('trackVisualization');
 			if (!svg) return null;
 
-			return new Promise((resolve, reject) => {
+			try {
 				try {
-					const clonedSvg = svg.cloneNode(true);
-					clonedSvg.querySelectorAll('foreignObject').forEach((node) => node.remove());
-					normalizeSvgImageHrefs(clonedSvg);
-
-					const viewBox = clonedSvg.viewBox && clonedSvg.viewBox.baseVal
-						? clonedSvg.viewBox.baseVal
-						: null;
-					let width = viewBox?.width || svg.clientWidth || 1200;
-					let height = viewBox?.height || svg.clientHeight || 600;
-					if (width < 400) width = 1200;
-					if (height < 300) height = 600;
-
-					clonedSvg.setAttribute('width', width);
-					clonedSvg.setAttribute('height', height);
-
-					const serializer = new XMLSerializer();
-					const svgString = serializer.serializeToString(clonedSvg);
-					const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-					const svgUrl = URL.createObjectURL(svgBlob);
-
-					const img = new Image();
-					const timeoutId = setTimeout(() => {
-						URL.revokeObjectURL(svgUrl);
-						reject(new Error('Таймаут при обработке схемы'));
-					}, 7000);
-
-					img.onload = () => {
-						clearTimeout(timeoutId);
-						const scale = 2;
-						const canvas = document.createElement('canvas');
-						canvas.width = width * scale;
-						canvas.height = height * scale;
-						
-						const ctx = canvas.getContext('2d');
-						ctx.fillStyle = 'white';
-						ctx.fillRect(0, 0, canvas.width, canvas.height);
-						
-						ctx.scale(scale, scale);
-						ctx.drawImage(img, 0, 0, width, height);
-
-						canvas.toBlob((blob) => {
-							resolve(blob);
-							URL.revokeObjectURL(svgUrl);
-						}, 'image/png', 0.95);
-					};
-					
-					img.onerror = () => {
-						clearTimeout(timeoutId);
-						URL.revokeObjectURL(svgUrl);
-						reject(new Error('Ошибка конвертации схемы'));
-					};
-					
-					img.src = svgUrl;
-
-				} catch (error) {
-					reject(error);
+					const screenshotBlob = await captureTrackScreenshotBlob();
+					if (screenshotBlob) return screenshotBlob;
+				} catch (screenshotError) {
+					console.warn('Скриншотный экспорт не удался, переключаемся на резервный режим:', screenshotError);
 				}
-			});
+
+				await preloadTrackImageAssets(svg);
+				const viewBox = svg.viewBox && svg.viewBox.baseVal
+					? svg.viewBox.baseVal
+					: null;
+				let width = viewBox?.width || svg.clientWidth || 1200;
+				let height = viewBox?.height || svg.clientHeight || 600;
+				if (width < 400) width = 1200;
+				if (height < 300) height = 600;
+
+				try {
+					const baseSvg = createTrackBaseSvgWithoutImages(svg);
+					normalizeSvgImageHrefs(svg);
+					normalizeSvgImageHrefs(baseSvg);
+					baseSvg.setAttribute('width', width);
+					baseSvg.setAttribute('height', height);
+
+					const baseBlob = await renderSvgElementToPngBlob(baseSvg, width, height, 2);
+					const baseBlobUrl = URL.createObjectURL(baseBlob);
+					const baseImg = await loadImageElement(baseBlobUrl);
+					const canvas = document.createElement('canvas');
+					canvas.width = width * 2;
+					canvas.height = height * 2;
+					const ctx = canvas.getContext('2d');
+					ctx.fillStyle = 'white';
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
+					URL.revokeObjectURL(baseBlobUrl);
+					await drawTrackSvgImagesToCanvas(ctx, svg, 2);
+					return await new Promise((resolve, reject) => {
+						canvas.toBlob((blob) => {
+							if (!blob) return reject(new Error('Canvas не смог собрать финальный PNG'));
+							resolve(blob);
+						}, 'image/png', 0.95);
+					});
+				} catch (layeredError) {
+					console.warn('Двухслойный экспорт не удался, пробуем резервный режим:', layeredError);
+					const fallbackSvg = svg.cloneNode(true);
+					fallbackSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+					normalizeSvgImageHrefs(fallbackSvg);
+					await inlineSvgImagesAsDataUris(fallbackSvg);
+					fallbackSvg.setAttribute('width', width);
+					fallbackSvg.setAttribute('height', height);
+					return await renderSvgElementToPngBlob(fallbackSvg, width, height, 2);
+				}
+			} catch (error) {
+				throw error;
+			}
 		}
 
 		function normalizeSvgImageHrefs(svgElement) {
@@ -3233,14 +3529,7 @@ Email: ${email}
 			});
 		}
 
-		function blobToDataUrl(blob) {
-			return new Promise((resolve, reject) => {
-				const reader = new FileReader();
-				reader.onloadend = () => resolve(reader.result);
-				reader.onerror = reject;
-				reader.readAsDataURL(blob);
-			});
-		}
+
 
 		function escapeHtml(value) {
 			return String(value ?? '')
@@ -3251,7 +3540,72 @@ Email: ${email}
 				.replace(/'/g, '&#39;');
 		}
 
-		function buildPdfReportHtml(trackImageDataUrl = '') {
+		async function buildEmbeddedTrackSvgMarkup() {
+			const sourceSvg = document.getElementById('trackVisualization');
+			if (!sourceSvg) return '';
+
+			const viewBox = sourceSvg.viewBox && sourceSvg.viewBox.baseVal ? sourceSvg.viewBox.baseVal : null;
+			const width = Math.max(1, Math.round(viewBox?.width || Number(sourceSvg.getAttribute('width')) || sourceSvg.clientWidth || 1200));
+			const height = Math.max(1, Math.round(viewBox?.height || Number(sourceSvg.getAttribute('height')) || sourceSvg.clientHeight || 640));
+
+			const clone = sourceSvg.cloneNode(true);
+			clone.removeAttribute('id');
+			clone.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
+			clone.setAttribute('width', String(width));
+			clone.setAttribute('height', String(height));
+			clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+			clone.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+
+			const stagePixelWidth = 320;
+			const leftPadding = 220;
+			const topPadding = 30;
+			const bottomPadding = 120;
+			const groundY = height - bottomPadding;
+			const maxHeight = Math.max(...state.heights, 6);
+			const scale = ((height - topPadding - bottomPadding) / (maxHeight + 50));
+			const formatMeters = (val) => `${Number(val).toFixed(2)}м`;
+
+			clone.querySelectorAll('[data-summary-labels="true"]').forEach((node) => node.remove());
+			const labelsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			labelsGroup.setAttribute('data-summary-labels', 'true');
+
+			for (let i = 0; i < state.platformCount; i++) {
+				const x = leftPadding + i * stagePixelWidth;
+				const platformY = groundY - state.heights[i] * scale - 20;
+				const heightText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				heightText.setAttribute('x', x);
+				heightText.setAttribute('y', platformY - 142);
+				heightText.setAttribute('text-anchor', 'middle');
+				heightText.setAttribute('font-size', '12');
+				heightText.setAttribute('font-weight', '600');
+				heightText.setAttribute('fill', '#1f1f1f');
+				heightText.textContent = formatMeters(state.heights[i]);
+				labelsGroup.appendChild(heightText);
+			}
+
+			for (let i = 0; i < state.platformCount - 1; i++) {
+				const x1 = leftPadding + i * stagePixelWidth;
+				const x2 = leftPadding + (i + 1) * stagePixelWidth;
+				const midX = (x1 + x2) / 2;
+				const distText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				distText.setAttribute('x', midX);
+				distText.setAttribute('y', groundY + 42);
+				distText.setAttribute('text-anchor', 'middle');
+				distText.setAttribute('font-size', '12');
+				distText.setAttribute('font-weight', '600');
+				distText.setAttribute('fill', '#1f1f1f');
+				distText.textContent = formatMeters(state.distances[i]);
+				labelsGroup.appendChild(distText);
+			}
+
+			clone.appendChild(labelsGroup);
+			normalizeSvgImageHrefs(clone);
+			await inlineSvgImagesAsDataUris(clone);
+
+			return `<div style="margin-bottom:14px; border:1px solid #dce9e6; border-radius:8px; overflow:auto; background:#fff;">${clone.outerHTML}</div>`;
+		}
+
+		function buildSavedReportHtml(trackContentHtml = '') {
 			const logoSrc = document.querySelector('#costSummary .logo img')?.src || '';
 			const firstName = document.getElementById('firstName')?.value.trim() || '-';
 			const lastName = document.getElementById('lastName')?.value.trim() || '-';
@@ -3270,21 +3624,13 @@ Email: ${email}
 			`).join('');
 
 			const totalCost = Number(state.breakdown?.totalCost || 0).toLocaleString('ru-RU');
-			const imageList = Array.isArray(trackImageDataUrl) ? trackImageDataUrl : [trackImageDataUrl].filter(Boolean);
-			const trackImageBlock = imageList.length
-				? imageList.map((src, index) => `
-					<div style="margin-bottom: 14px;">
-						<div style="font-size:12px; color:#5d7270; margin-bottom:6px;">Сегмент схемы ${index + 1}</div>
-						<img src="${src}" alt="Схема трассы ${index + 1}" style="width: 100%; border: 1px solid #dce9e6; border-radius: 8px;">
-					</div>
-				`).join('')
-				: '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
+			const trackImageBlock = trackContentHtml || '<p style="color:#888;">Схему трассы не удалось добавить автоматически.</p>';
 
 			return `<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>PDF отчет — Space Concept</title>
+<title>Расчет трассы — Space Concept</title>
 <style>
 body { font-family: Arial, sans-serif; margin: 28px; color:#243330; }
 .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1abc9c; padding-bottom:10px; }
@@ -3305,7 +3651,7 @@ th { background:#f4fbf9; }
 <body>
 <div class="header">
   <img class="logo" src="${logoSrc}" alt="Space Concept">
-  <div class="badge">PDF ОТЧЕТ</div>
+  <div class="badge">РАСЧЕТ</div>
 </div>
 
 <h1>Коммерческий расчет трассы веревочного парка</h1>
@@ -3350,97 +3696,111 @@ th { background:#f4fbf9; }
 </html>`;
 		}
 
-		async function svgElementToPngDataUrl(svgElement, scale = 2) {
-			const serializer = new XMLSerializer();
-			const svgString = serializer.serializeToString(svgElement);
-			const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-			const svgUrl = URL.createObjectURL(svgBlob);
+		async function buildTrackContentForReport() {
+			try {
+				const embeddedSvg = await withTimeout(
+					buildEmbeddedTrackSvgMarkup(),
+					30000,
+					'Превышено время подготовки SVG-схемы для отчета'
+				);
+				if (embeddedSvg) return embeddedSvg;
+			} catch (error) {
+				console.warn('Не удалось встроить SVG-схему в отчет:', error);
+			}
 
 			try {
-				return await new Promise((resolve, reject) => {
-					const img = new Image();
-					img.onload = () => {
-						const width = Number(svgElement.getAttribute('width')) || svgElement.viewBox.baseVal.width;
-						const height = Number(svgElement.getAttribute('height')) || svgElement.viewBox.baseVal.height;
+				const assets = await withTimeout(
+					buildTrackExportAssets(),
+					45000,
+					'Превышено время подготовки схемы для отчета'
+				);
+				if (assets?.jpgDataUrl || assets?.pngDataUrl) {
+					const src = assets.jpgDataUrl || assets.pngDataUrl;
+					return `<div style="margin-bottom:14px;"><img src="${src}" alt="Схема трассы" style="width:100%; border:1px solid #dce9e6; border-radius:8px;"></div>`;
+				}
+			} catch (error) {
+				console.warn('Не удалось встроить растр-схему в отчет:', error);
+			}
+
+			return '';
+		}
+
+		async function convertImageBlobToJpegBlob(sourceBlob, quality = 0.95) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				const src = URL.createObjectURL(sourceBlob);
+
+				img.onload = () => {
+					try {
 						const canvas = document.createElement('canvas');
-						canvas.width = width * scale;
-						canvas.height = height * scale;
+						canvas.width = Math.max(1, img.naturalWidth || 1);
+						canvas.height = Math.max(1, img.naturalHeight || 1);
 						const ctx = canvas.getContext('2d');
 						ctx.fillStyle = '#ffffff';
 						ctx.fillRect(0, 0, canvas.width, canvas.height);
-						ctx.scale(scale, scale);
-						ctx.drawImage(img, 0, 0, width, height);
-						resolve(canvas.toDataURL('image/png', 0.95));
-					};
-					img.onerror = () => reject(new Error('Ошибка подготовки сегмента схемы'));
-					img.src = svgUrl;
-				});
+						ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+						canvas.toBlob((jpegBlob) => {
+							URL.revokeObjectURL(src);
+							if (!jpegBlob) {
+								reject(new Error('Не удалось сформировать JPG'));
+								return;
+							}
+							resolve(jpegBlob);
+						}, 'image/jpeg', quality);
+					} catch (error) {
+						URL.revokeObjectURL(src);
+						reject(error);
+					}
+				};
+
+				img.onerror = () => {
+					URL.revokeObjectURL(src);
+					reject(new Error('Не удалось загрузить PNG для конвертации в JPG'));
+				};
+
+				img.src = src;
+			});
+		}
+
+		async function buildTrackExportAssets() {
+			const pngBlob = await svgToPngBlob();
+			if (!pngBlob) return null;
+
+			const jpgBlob = await convertImageBlobToJpegBlob(pngBlob, 0.94);
+			const pngDataUrl = await blobToDataUrl(pngBlob);
+			const jpgDataUrl = await blobToDataUrl(jpgBlob);
+
+			return { pngBlob, jpgBlob, pngDataUrl, jpgDataUrl };
+		}
+
+		async function withTimeout(taskPromise, timeoutMs, message) {
+			let timeoutId;
+			try {
+				return await Promise.race([
+					taskPromise,
+					new Promise((_, reject) => {
+						timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+					})
+				]);
 			} finally {
-				URL.revokeObjectURL(svgUrl);
+				if (timeoutId) clearTimeout(timeoutId);
 			}
 		}
 
-		async function buildTrackRowsForPdf() {
-			const sourceSvg = document.getElementById('trackVisualization');
-			if (!sourceSvg) return [];
-
-			const viewBox = sourceSvg.viewBox?.baseVal;
-			const fullWidth = viewBox?.width || Number(sourceSvg.getAttribute('width')) || 0;
-			const fullHeight = viewBox?.height || Number(sourceSvg.getAttribute('height')) || 640;
-			if (!fullWidth) return [];
-
-			const cleanSvg = sourceSvg.cloneNode(true);
-			cleanSvg.removeAttribute('id');
-			cleanSvg.style.pointerEvents = 'none';
-			cleanSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
-			normalizeSvgImageHrefs(cleanSvg);
-
-			const stagePixelWidth = 320;
-			const leftPadding = 220;
-			const rightPadding = 100;
-			const stagesPerRow = 5;
-			const totalStages = Math.max(0, state.platformCount - 1);
-
-			const rows = [];
-			if (totalStages <= 0) {
-				rows.push({ startStage: 0, endStageExclusive: 0 });
-			} else {
-				for (let startStage = 0; startStage < totalStages; startStage += stagesPerRow) {
-					rows.push({
-						startStage,
-						endStageExclusive: Math.min(totalStages, startStage + stagesPerRow)
-					});
-				}
-			}
-
-			const result = [];
-			for (const rowInfo of rows) {
-				const { startStage, endStageExclusive } = rowInfo;
-				const stagesInRow = Math.max(1, endStageExclusive - startStage);
-				const rowStart = startStage * stagePixelWidth;
-				const rowEnd = rowStart + leftPadding + stagesInRow * stagePixelWidth + rightPadding;
-				const width = Math.max(1, rowEnd - rowStart);
-
-				const rowSvg = cleanSvg.cloneNode(true);
-				rowSvg.setAttribute('viewBox', `${rowStart} 0 ${width} ${fullHeight}`);
-				rowSvg.setAttribute('width', width);
-				rowSvg.setAttribute('height', fullHeight);
-				rowSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
-
-				rowSvg.querySelectorAll('[data-stage-index]').forEach((node) => {
-					const stageIndex = Number(node.getAttribute('data-stage-index'));
-					if (Number.isNaN(stageIndex)) return;
-					if (stageIndex < startStage || stageIndex >= endStageExclusive) node.remove();
-				});
-
-				const rowImage = await svgElementToPngDataUrl(rowSvg, 2);
-				result.push(rowImage);
-			}
-
-			return result;
+        function downloadReportHtmlFile(reportHtml) {
+			const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const timestamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `space-concept-raschet-${timestamp}.html`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
 		}
 
-		async function downloadPdfReport() {
+		async function saveCalculationReport() {
 			if (!state.breakdown) {
 				alert('Сначала рассчитайте стоимость трассы.');
 				return;
@@ -3449,45 +3809,23 @@ th { background:#f4fbf9; }
 			const btn = document.getElementById('downloadPdfBtn');
 			if (btn) {
 				btn.disabled = true;
-				btn.textContent = 'Подготовка PDF...';
+				btn.textContent = 'Подготовка файла...';
 			}
 
 			try {
 				updateVisualization();
 
-				let trackImageDataUrl = [];
-				try {
-					trackImageDataUrl = await Promise.race([
-						buildTrackRowsForPdf(),
-						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 8000))
-					]);
+				const trackContentHtml = await buildTrackContentForReport();
 
-					if (!trackImageDataUrl.length) {
-						const schemaBlob = await svgToPngBlob();
-						if (schemaBlob) trackImageDataUrl = [await blobToDataUrl(schemaBlob)];
-					}
-				} catch (error) {
-					console.warn('Не удалось встроить схему в PDF:', error);
-				}
-
-				const reportWindow = window.open('', '_blank');
-				if (!reportWindow) {
-					alert('Браузер заблокировал всплывающее окно. Разрешите pop-up для экспорта PDF.');
-					return;
-				}
-
-				reportWindow.document.open();
-				reportWindow.document.write(buildPdfReportHtml(trackImageDataUrl));
-				reportWindow.document.close();
-				reportWindow.focus();
-				setTimeout(() => reportWindow.print(), 500);
+				const reportHtml = buildSavedReportHtml(trackContentHtml);
+				downloadReportHtmlFile(reportHtml);
 			} catch (error) {
-				console.error('Ошибка формирования PDF:', error);
-				alert('Не удалось сформировать PDF-отчет. Попробуйте еще раз.');
+				console.error('Ошибка формирования файла расчета:', error);
+				alert('Не удалось сохранить расчет. Попробуйте еще раз.');
 			} finally {
 				if (btn) {
 					btn.disabled = false;
-					btn.innerHTML = '<span>📄</span><span>Скачать PDF-отчет</span>';
+					btn.innerHTML = '<span>📄</span><span>Сохранить расчет</span>';
 				}
 			}
 		}
@@ -3550,29 +3888,23 @@ th { background:#f4fbf9; }
 			try {
 				updateVisualization();
 
-				let schemaBlob = null;
-				try {
-					schemaBlob = await Promise.race([
-						svgToPngBlob(),
-						new Promise((_, reject) => setTimeout(() => reject(new Error('Таймаут экспорта схемы')), 8000))
-					]);
-				} catch (error) {
-					console.warn('Не удалось подготовить схему:', error);
-				}
+				const trackContentHtml = await buildTrackContentForReport();
+				const reportHtml = buildSavedReportHtml(trackContentHtml);
+				const reportBlob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
 
-				if (schemaBlob) {
+				if (reportBlob) {
 					const formData = new FormData();
 					formData.append('chat_id', CHAT_ID);
-					formData.append('photo', schemaBlob, 'rope-park-schema.png');
+					formData.append('document', reportBlob, 'rope-park-raschet.html');
 					const caption = `📋 *НОВАЯ ЗАЯВКА НА ВЕРЕВОЧНЫЙ ПАРК*\n\n` +
 						`👤 *Имя:* ${firstName} ${lastName}\n` +
 						`📱 *Телефон:* ${phone}\n` +
 						`📧 *Email:* ${email}\n\n` +
-						`⬇️ *Детализация проекта в следующем сообщении*`;
+						`⬇️ *Файл с полной схемой и сметой прикреплен*`;
 					formData.append('caption', caption);
 					formData.append('parse_mode', 'Markdown');
 
-					await telegramRequest(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+					await telegramRequest(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
 						method: 'POST',
 						body: formData
 					}, 15000);
