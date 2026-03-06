@@ -3160,11 +3160,11 @@ Email: ${email}
 			const svg = document.getElementById('trackVisualization');
 			if (!svg) return null;
 
-			return new Promise((resolve, reject) => {
+			return new Promise(async (resolve, reject) => {
 				try {
 					const clonedSvg = svg.cloneNode(true);
 					clonedSvg.querySelectorAll('foreignObject').forEach((node) => node.remove());
-					normalizeSvgImageHrefs(clonedSvg);
+					await inlineSvgImages(clonedSvg);
 
 					const viewBox = clonedSvg.viewBox && clonedSvg.viewBox.baseVal
 						? clonedSvg.viewBox.baseVal
@@ -3220,6 +3220,37 @@ Email: ${email}
 					reject(error);
 				}
 			});
+		}
+
+		async function inlineSvgImages(svgElement) {
+			const imageNodes = Array.from(svgElement.querySelectorAll('image'));
+			if (!imageNodes.length) return;
+
+			const dataUrlCache = new Map();
+			const toDataUrl = async (url) => {
+				if (dataUrlCache.has(url)) return dataUrlCache.get(url);
+
+				const response = await fetch(url, { cache: 'force-cache' });
+				if (!response.ok) throw new Error(`Не удалось загрузить ресурс: ${url}`);
+				const blob = await response.blob();
+				const dataUrl = await blobToDataUrl(blob);
+				dataUrlCache.set(url, dataUrl);
+				return dataUrl;
+			};
+
+			for (const imgNode of imageNodes) {
+				const href = imgNode.getAttribute('href') || imgNode.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+				if (!href || /^(data:|blob:)/i.test(href)) continue;
+
+				try {
+					const absoluteHref = new URL(href, window.location.href).href;
+					const dataUrl = await toDataUrl(absoluteHref);
+					imgNode.setAttribute('href', dataUrl);
+					imgNode.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+				} catch (error) {
+					console.warn('Не удалось встроить изображение в SVG:', href, error);
+				}
+			}
 		}
 
 		function normalizeSvgImageHrefs(svgElement) {
@@ -3351,6 +3382,7 @@ th { background:#f4fbf9; }
 		}
 
 		async function svgElementToPngDataUrl(svgElement, scale = 2) {
+			await inlineSvgImages(svgElement);
 			const serializer = new XMLSerializer();
 			const svgString = serializer.serializeToString(svgElement);
 			const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
@@ -3393,7 +3425,7 @@ th { background:#f4fbf9; }
 			cleanSvg.removeAttribute('id');
 			cleanSvg.style.pointerEvents = 'none';
 			cleanSvg.querySelectorAll('foreignObject, [data-interactive="true"]').forEach((node) => node.remove());
-			normalizeSvgImageHrefs(cleanSvg);
+			await inlineSvgImages(cleanSvg);
 
 			const stagePixelWidth = 320;
 			const leftPadding = 220;
